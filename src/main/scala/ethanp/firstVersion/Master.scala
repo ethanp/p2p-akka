@@ -62,7 +62,7 @@ class Client extends Actor {
             prin(s"loading $pathString")
             localFiles(name) = LocalP2PFile.loadFrom(pathString)
             println("chunk hashes:\n----------")
-            for (j ← localFiles(name).chunkHashes) println(j)
+            localFiles(name).chunkHashes.foreach(println)
             println(s"file hash: ${localFiles(name).fileHash}")
     }
 }
