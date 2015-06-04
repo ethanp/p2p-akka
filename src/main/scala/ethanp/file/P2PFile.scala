@@ -1,6 +1,7 @@
 package ethanp.file
 
-import java.io.File
+import java.io.{BufferedInputStream, File, FileInputStream}
+import java.security.MessageDigest
 
 import akka.actor.ActorPath
 import ethanp.common.Sha2
@@ -46,9 +47,58 @@ extends P2PFile
 case class LocalP2PFile(
     /** where the actual data for this file resides on the local file system */
     localFileLoc    : File,
-    metadataFileLoc : File,
+//    metadataFileLoc : File, (for later...)
     numChunks       : Int,
     chunkHashes     : Array[Sha2],
     fileHash        : Sha2
 )
 extends P2PFile
+
+object LocalP2PFile {
+
+    val BYTES_PER_PIECE = 4
+    val PIECES_PER_CHUNK = 4
+    val BYTES_PER_CHUNK = BYTES_PER_PIECE * PIECES_PER_CHUNK
+
+    def hashTheFile(file: File): (Array[Sha2], Sha2) = {
+        val fis = new BufferedInputStream(new FileInputStream(file))
+        val readArr = new Array[Byte](BYTES_PER_CHUNK)
+        val fileDigester = MessageDigest.getInstance("SHA-256")
+        val len = file.length()
+        var bytesRead = 1
+        var offset = 0
+        var totalRead = 0
+        val chunkHashes = mutable.MutableList.empty[Sha2]
+        def doneReading = totalRead == len
+        def filledReadArray = offset + bytesRead == readArr.length
+        def updateHashes() {
+            fileDigester.update(readArr)
+            chunkHashes += Sha2.hashOf(readArr)
+            offset = 0
+        }
+        try {
+            while (!doneReading) {
+                bytesRead = fis.read(readArr, offset, readArr.length - offset)
+                totalRead += bytesRead
+                if (filledReadArray || doneReading) {
+                    updateHashes()
+                } else {
+                    offset += bytesRead
+                }
+            }
+        } catch { case e: Exception ⇒
+            System.err.println(e.getMessage)
+            e.printStackTrace()
+            System exit 5
+        } finally {
+            fis.close()
+        }
+        (chunkHashes.toArray, Sha2.digestToBase64(fileDigester.digest()))
+    }
+
+    def loadFrom(path: String): LocalP2PFile = {
+        val file = new File(path)
+        val (chunkHashes, fileHash) = hashTheFile(file)
+        LocalP2PFile(file, file.length().toInt/BYTES_PER_CHUNK, chunkHashes, fileHash)
+    }
+}
