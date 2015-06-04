@@ -1,6 +1,6 @@
 package ethanp.file
 
-import java.io.{BufferedInputStream, File, FileInputStream}
+import java.io.{InputStream, BufferedInputStream, File, FileInputStream}
 import java.security.MessageDigest
 
 import akka.actor.ActorPath
@@ -61,7 +61,7 @@ object LocalP2PFile {
     val BYTES_PER_CHUNK = BYTES_PER_PIECE * PIECES_PER_CHUNK
 
     def hashTheFile(file: File): (Array[Sha2], Sha2) = {
-        val fileInStream = new BufferedInputStream(new FileInputStream(file))
+
         val readArr      = new Array[Byte](BYTES_PER_CHUNK)
         val fileDigester = MessageDigest.getInstance("SHA-256")
         val chunkHashes  = mutable.MutableList.empty[Sha2]
@@ -84,9 +84,9 @@ object LocalP2PFile {
             chunkHashes += Sha2.hashOf(arr)
         }
 
-        try {
+        def readFile(fis: InputStream) {
             while (!doneReading) {
-                bytesRead = fileInStream.read(readArr, offset, readArr.length - offset)
+                bytesRead = fis.read(readArr, offset, readArr.length - offset)
                 totalRead += bytesRead
                 if (filledReadArray) {
                     updateHashes()
@@ -96,12 +96,22 @@ object LocalP2PFile {
                     offset += bytesRead
                 }
             }
-        } catch { case e: Exception ⇒
-            e.printStackTrace()
-            System.exit(5)
-        } finally {
-            fileInStream.close()
         }
+
+        def readCarefully() {
+            val fileInStream = new BufferedInputStream(new FileInputStream(file))
+            try readFile(fileInStream)
+            catch {
+                case e: Exception ⇒
+                    e.printStackTrace()
+                    System.exit(5)
+            }
+            finally {
+                fileInStream.close()
+            }
+        }
+
+        readCarefully()
         (chunkHashes.toArray, Sha2.digestToBase64(fileDigester.digest()))
     }
 
