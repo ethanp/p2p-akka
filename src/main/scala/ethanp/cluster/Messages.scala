@@ -9,6 +9,17 @@ import scala.collection.{SortedSet, immutable, mutable}
  * Ethan Petuchowski
  * 4/9/15
  */
+
+/* shiny new p2p-related stuff */
+
+
+
+
+
+
+
+/* all the old stuff that was already here
+ * "As Time Goes On" it will become clearer how much of this is useful */
 sealed class Msg() extends Serializable
 sealed trait MasterMsg extends Msg
 sealed trait Action extends Msg { def str: Option[String] }
@@ -17,7 +28,7 @@ class NetworkPartition(val i: NodeID, val j: NodeID) extends MasterMsg
 object NetworkPartition { def unapply(fwd: NetworkPartition): Option[(NodeID, NodeID)] = Some(fwd.i, fwd.j) }
 
 trait BrdcstServers extends MasterMsg
-case class  RetireServer(id: NodeID) extends Msg
+case class  RetireTracker(id: NodeID) extends Msg
 case class  BreakConnection(id1: NodeID, id2: NodeID)   extends NetworkPartition(id1, id2)
 case class  RestoreConnection(id1: NodeID, id2: NodeID) extends NetworkPartition(id1, id2)
 case class  IDMsg(id: NodeID) extends Msg

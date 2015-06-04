@@ -2,9 +2,9 @@ name := "p2p-akka-cluster"
 
 version := "1.0"
 
-scalaVersion := "2.11.6"
+scalaVersion := "2.11.5"
 
-val akkaVersion = "2.3.11"
+val akkaVersion = "2.3.9"
 
 libraryDependencies ++= Seq(
   "com.typesafe.akka" %% "akka-remote" % akkaVersion,
@@ -13,8 +13,8 @@ libraryDependencies ++= Seq(
   "org.scalatest" %% "scalatest" % "2.2.2" % "test"
 )
 
-logLevel in compile := Level.Error
+//logLevel in compile := Level.Error
 
-TaskKey[Unit]("execClient") := (runMain in Compile).toTask(" ethanp.cluster.Client").value
+//TaskKey[Unit]("execClient") := (runMain in Compile).toTask(" ethanp.cluster.Client").value
 
-TaskKey[Unit]("execServer") := (runMain in Compile).toTask(" ethanp.cluster.Server").value
+//TaskKey[Unit]("execServer") := (runMain in Compile).toTask(" ethanp.cluster.Server").value

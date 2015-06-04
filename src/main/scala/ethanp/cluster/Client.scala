@@ -9,7 +9,7 @@ import ethanp.cluster.ClusterUtil.{LCValue, NodeID, ServerName}
  */
 class Client extends GroupMem {
 
-    /* ≤ 1 server connected at a time */
+    /* ≤ 1 tracker connected at a time */
     var server: ActorSelection = _
     var serverID: NodeID = _
     var masterRef: ActorRef = _

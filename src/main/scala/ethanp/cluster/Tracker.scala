@@ -248,7 +248,7 @@ class Tracker extends GroupMem {
         }
     }
 
-    def retireServer(server: RetireServer): Unit = {
+    def retireServer(server: RetireTracker): Unit = {
 
         /* This disables future writes from being appended to the log */
         appendAction(Retirement(serverName))
@@ -435,7 +435,7 @@ class Tracker extends GroupMem {
          * then exit the macro-cluster.
          * My nodeID will never be used again.
          */
-        case m: RetireServer ⇒ retireServer(m)
+        case m: RetireTracker ⇒ retireServer(m)
 
         /**
          * Print my complete `writeLog` to `StdOut` in the specified format

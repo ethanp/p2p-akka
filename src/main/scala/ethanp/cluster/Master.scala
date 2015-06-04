@@ -85,9 +85,17 @@ object Master {
         lazy val b1i = b1.toInt
         lazy val b2i = b2.toInt
         brkStr head match {
-            case "joinServer"        ⇒ createTracker(sid = b1i)
+
+            /* shiny new p2p-related stuff */
+            case "addLocalFile" ⇒ clusterKing ! AddLocalFile(cid = b1i, filePath = b2)
+
+
+            /* still useful for testing */
+            case "joinTracker"       ⇒ createTracker(sid = b1i)
             case "joinClient"        ⇒ createClient(cid = b1i, sid = b2i)
-            case "retireServer"      ⇒ clusterKing ! RetireServer(id = b1i)
+
+            /* old crap that I don't need anymore */
+            case "retireTracker"     ⇒ clusterKing ! RetireTracker(id = b1i)
             case "breakConnection"   ⇒ clusterKing ! BreakConnection(id1 = b1i, id2 = b2i)
             case "restoreConnection" ⇒ clusterKing ! RestoreConnection(id1 = b1i, id2 = b2i)
             case "pause"             ⇒ clusterKing ! Pause
@@ -170,7 +178,7 @@ class Master extends GroupMem {
         /** used to terminate blocking */
         case Gotten ⇒ handleNext
 
-        case m @ RetireServer(id) ⇒
+        case m @ RetireTracker(id) ⇒
             getMember(id) ! m
             members -= id
 
