@@ -1,10 +1,10 @@
 package ethanp.file
 
-import java.io.{InputStream, BufferedInputStream, File, FileInputStream}
+import java.io.{BufferedInputStream, File, FileInputStream, InputStream}
 import java.security.MessageDigest
 
-import akka.actor.ActorPath
 import ethanp.common.Sha2
+import ethanp.firstVersion.Swarm
 
 import scala.collection.mutable
 
@@ -25,32 +25,28 @@ import scala.collection.mutable
  * It is saved on disk (as JSON?)
  */
 trait P2PFile {
-    val numChunks: Int
-    val chunkHashes: Array[Sha2]
-    val fileHash: Sha2
+    val fileInfo: FileInfo
 }
+
+case class FileInfo(
+    filename: String,
+    numChunks: Int,
+    chunkHashes: Array[Sha2],
+    fileHash: Sha2
+)
 
 /**
  * sent through akka by the Tracker, when a file is requested
  */
 case class FileToDownload(
-    numChunks     : Int,
-    chunkHashes   : Array[Sha2],
-    fileHash      : Sha2
+    fileInfo: FileInfo,
+    swarm : Swarm
 )
 extends P2PFile
-{
-    val peersThoughtToOwnFile = mutable.HashSet.empty[ActorPath]
-    val trackersWithKnowledge = mutable.HashSet.empty[ActorPath]
-}
 
 case class LocalP2PFile(
-    /** where the actual data for this file resides on the local file system */
-    localFileLoc    : File,
-//    metadataFileLoc : File, (for later...)
-    numChunks       : Int,
-    chunkHashes     : Array[Sha2],
-    fileHash        : Sha2
+    fileInfo: FileInfo,
+    localFileLoc: File // data loc for this file on the local file system
 )
 extends P2PFile
 
@@ -60,11 +56,16 @@ object LocalP2PFile {
     val PIECES_PER_CHUNK = 4
     val BYTES_PER_CHUNK = BYTES_PER_PIECE * PIECES_PER_CHUNK
 
+    /**
+     * hash the entire file without ever holding more than a single chunk in memory
+     */
     def hashTheFile(file: File): (Array[Sha2], Sha2) = {
 
-        val readArr      = new Array[Byte](BYTES_PER_CHUNK)
-        val fileDigester = MessageDigest.getInstance("SHA-256")
-        val chunkHashes  = mutable.MutableList.empty[Sha2]
+        val readArr          = new Array[Byte](BYTES_PER_CHUNK)
+        val fileDigester     = MessageDigest.getInstance("SHA-256")
+        def finalFileDigest  = Sha2.digestToBase64(fileDigester.digest())
+        val chunkHashes      = mutable.MutableList.empty[Sha2]
+        def finalChunkHashes = chunkHashes.toArray
 
         val len         = file.length()
         var bytesRead   = 1
@@ -112,12 +113,23 @@ object LocalP2PFile {
         }
 
         readCarefully()
-        (chunkHashes.toArray, Sha2.digestToBase64(fileDigester.digest()))
+        finalChunkHashes → finalFileDigest
     }
 
-    def loadFrom(path: String): LocalP2PFile = {
+    def loadFile(name: String, path: String): LocalP2PFile = {
         val file = new File(path)
         val (chunkHashes, fileHash) = hashTheFile(file)
-        LocalP2PFile(file, file.length().toInt/BYTES_PER_CHUNK, chunkHashes, fileHash)
+        println(s"file hash: $fileHash")
+        println("chunk hashes:\n----------")
+        chunkHashes.foreach(println)
+        LocalP2PFile(
+            FileInfo(
+                name,
+                file.length().toInt/BYTES_PER_CHUNK,
+                chunkHashes,
+                fileHash
+            ),
+            file
+        )
     }
 }

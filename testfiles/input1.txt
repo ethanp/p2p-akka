@@ -1,0 +1,2 @@
+newClient
+addFile 0 testfiles/Test1.txt t
