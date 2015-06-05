@@ -2,9 +2,7 @@ package ethanp.firstVersion
 
 import java.util.Scanner
 
-import akka.actor._
-import ethanp.file.{FileInfo, FileToDownload, LocalP2PFile, P2PFile}
-import ethanp.firstVersion.Master.NodeID
+import akka.actor.{Props, ActorSystem, ActorRef}
 
 import scala.collection.mutable
 
@@ -42,97 +40,3 @@ object Master extends App {
         }
     }
 }
-
-class Tracker extends Actor {
-    var myId: NodeID = -1
-    def prin(x: Any) = println(s"s$myId: $x")
-
-    val myKnowledge = mutable.Map.empty[String, FileToDownload]
-
-    override def receive: Receive = {
-        case id: Int ⇒
-            myId = id
-            println(s"tracker set its id to $myId")
-        case m: ListTracker ⇒
-            sender ! TrackerKnowledge(myKnowledge.values.toList)
-        case InformTrackerIHave(id, info) ⇒
-            val desiredFilename = info.filename
-            if (myKnowledge contains desiredFilename) {
-                if (myKnowledge(desiredFilename).fileInfo != info) {
-                    sender ! TrackerSideError(s"different file named $desiredFilename already tracked")
-                }
-                else {
-                    val swarm = myKnowledge(desiredFilename).swarm
-                    if (swarm.seeders.contains(id)) {
-                        TrackerSideError("already knew you are seeding this file")
-                    }
-                    else if (swarm.leechers.contains(id)) {
-                        swarm.leechers -= id
-                        swarm.seeders += id → sender
-                        sender ! SuccessfullyAdded(desiredFilename)
-                    }
-                    else {
-                        swarm.seeders += id → sender
-                        sender ! SuccessfullyAdded(desiredFilename)
-                    }
-                }
-            }
-            else {
-                myKnowledge(desiredFilename) =
-                    FileToDownload(
-                        info,
-                        Swarm(
-                            seeders = Map(id → sender),
-                            leechers = Map()
-                        )
-                    )
-                sender ! SuccessfullyAdded(desiredFilename)
-            }
-    }
-}
-
-class Client extends Actor {
-    var myId: NodeID = -1
-    def prin(x: Any) = println(s"c$myId: $x")
-
-    val localFiles = mutable.Map.empty[String, P2PFile]
-
-    /* Note: actor refs CAN be sent to remote machine */
-    val knownTrackers = mutable.Map.empty[NodeID, ActorRef]
-    val trackerIDs = mutable.Map.empty[ActorRef, NodeID]
-
-    var mostRecentTrackerListing: List[FileToDownload] = _
-
-    override def receive: Receive = {
-        case id: Int ⇒
-            myId = id
-            println(s"client set its id to $myId")
-        case LoadFile(pathString, name) ⇒
-            prin(s"loading $pathString")
-            val localFile = LocalP2PFile.loadFile(name, pathString)
-            localFiles(name) = localFile
-            prin("sending to known trackers")
-            knownTrackers.values.foreach(_ ! InformTrackerIHave(myId, localFile.fileInfo))
-        case TrackerLoc(id, ref) ⇒
-            prin(s"adding tracker $id")
-            knownTrackers(id) = ref
-            trackerIDs(ref) = id
-        case m @ ListTracker(id) ⇒
-            knownTrackers(id) ! m
-        case TrackerKnowledge(files) ⇒
-            mostRecentTrackerListing = files
-            prin(s"tracker ${trackerIDs(sender())} knows of the following files")
-            files.zipWithIndex foreach { case (f, i) ⇒ println(s"${i+1}: ${f.fileInfo.filename}") }
-        case TrackerSideError(errMsg) ⇒
-            prin(s"ERROR from ${trackerIDs(sender())}: $errMsg")
-    }
-}
-
-case class LoadFile(pathString: String, name: String)
-case class TrackerLoc(trackerID: NodeID, trackerPath: ActorRef)
-case class ListTracker(trackerID: NodeID)
-case class Swarm(var seeders: Map[NodeID, ActorRef], var leechers: Map[NodeID, ActorRef])
-case class TrackerKnowledge(knowledge: List[FileToDownload])
-case class InformTrackerIHave(clientID: NodeID, fileInfo: FileInfo)
-case class TrackerSideError(filename: String)
-case class SuccessfullyAdded(filename: String)
