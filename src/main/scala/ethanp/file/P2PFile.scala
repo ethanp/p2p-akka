@@ -1,9 +1,10 @@
 package ethanp.file
 
-import java.io.{BufferedInputStream, File, FileInputStream, InputStream}
+import java.io._
 import java.security.MessageDigest
 
 import ethanp.common.Sha2
+import ethanp.file.LocalP2PFile._
 import ethanp.firstVersion.Swarm
 
 import scala.collection.mutable
@@ -46,9 +47,52 @@ extends P2PFile
 
 case class LocalP2PFile(
     fileInfo: FileInfo,
-    localFileLoc: File // data loc for this file on the local file system
+    file: File // data loc for this file on the local file system
 )
 extends P2PFile
+{
+    val lastChunkIdx = (file.length().toDouble / BYTES_PER_CHUNK).ceil.toInt - 1
+    val lastChunkStartLoc = lastChunkIdx * BYTES_PER_CHUNK
+
+    def numPiecesInChunk(chunkIdx: Int): Int = {
+        if (chunkIdx < lastChunkIdx) {
+            PIECES_PER_CHUNK
+        }
+        else {
+            val bytesRemaining = file.length() - lastChunkIdx * BYTES_PER_CHUNK
+            (bytesRemaining.toDouble / BYTES_PER_PIECE).ceil.toInt
+        }
+    }
+
+    def getPiece(chunkIdx: Int, pieceIdx: Int): Option[Array[Byte]] = {
+        def requestFailed() {
+            System.err.println(s"couldn't read file ${fileInfo.filename}")
+            System.err.println("ignoring client request")
+        }
+        val in = new RandomAccessFile(file, "r")
+        val startLoc = chunkIdx * BYTES_PER_CHUNK + pieceIdx * BYTES_PER_PIECE
+        val fileLen = file.length().toInt
+        val desiredSize = Math.min(startLoc + BYTES_PER_PIECE, fileLen - startLoc)
+        try {
+            in.seek(startLoc)
+            val arr = new Array[Byte](desiredSize)
+            val read = in.read(arr)
+            // we assume the entire piece can be read in one go...
+            if (read != -1 && read < desiredSize) {
+                requestFailed()
+                None
+            }
+            else {
+                Some(arr)
+            }
+        }
+        catch {
+            case e: Exception ⇒
+                requestFailed()
+                None
+        }
+    }
+}
 
 object LocalP2PFile {
 

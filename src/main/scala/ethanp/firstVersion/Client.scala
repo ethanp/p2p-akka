@@ -1,8 +1,9 @@
 package ethanp.firstVersion
 
-import akka.actor.{ReceiveTimeout, Actor, Props, ActorRef}
-import ethanp.file.{FileInfo, LocalP2PFile, FileToDownload, P2PFile}
+import akka.actor.{Actor, ActorRef, Props, ReceiveTimeout}
+import ethanp.file.{FileInfo, FileToDownload, LocalP2PFile}
 import ethanp.firstVersion.Master.NodeID
+import ethanp.file.LocalP2PFile._
 
 import scala.collection.mutable
 import scala.concurrent.duration._ // implicits like "seconds", etc.
@@ -14,8 +15,9 @@ import scala.concurrent.duration._ // implicits like "seconds", etc.
 class Client extends Actor {
     var myId: NodeID = -1
     def prin(x: Any) = println(s"c$myId: $x")
+    def prinErr(x: Any) = System.err.println(s"c$myId: $x")
 
-    val localFiles = mutable.Map.empty[String, P2PFile]
+    val localFiles = mutable.Map.empty[String, LocalP2PFile]
 
     /* Note: actor refs CAN be sent to remote machine */
     val knownTrackers = mutable.Map.empty[NodeID, ActorRef]
@@ -23,6 +25,7 @@ class Client extends Actor {
 
     var mostRecentTrackerListing: List[FileToDownload] = _
     var currentDownloads = List.empty[FileDownloader]
+
 
     override def receive: Receive = {
 
@@ -60,7 +63,40 @@ class Client extends Actor {
             // pass args to actor constructor (runtime IllegalArgumentException if you mess it up!)
             currentDownloads ::= context.actorOf(Props(classOf[FileDownloader], m))
 
-        case ChunkRequest(fileInfo, chunkIdx, pieceIdx) ⇒ ???
+        /* at this time, handling ChunkRequests is a *blocking* maneuver */
+        case ChunkRequest(fileInfo, chunkIdx) ⇒
+            if (localFiles contains fileInfo.filename) {
+                val p2PFile = localFiles(fileInfo.filename)
+                if (p2PFile.fileInfo != fileInfo) {
+                    sender ! PeerSideError("file by that name has different hashes")
+                } else {
+                    // no idear how best to handle failures here...
+                    try {
+                        var pieceIdx = 0
+                        val piecesThisChunk = p2PFile.numPiecesInChunk(chunkIdx)
+                        var continue = true
+                        while (continue && pieceIdx < piecesThisChunk) {
+                            p2PFile.getPiece(chunkIdx, pieceIdx) match {
+                                case Some(arr) ⇒
+                                    sender ! Piece(arr, pieceIdx)
+                                    pieceIdx += 1
+                                case None ⇒ continue = false
+                            }
+                        }
+                        if (continue) {
+                            sender ! ChunkSuccess
+                        }
+                    }
+                    catch {
+                        case e: Exception ⇒
+                            prinErr(s"couldn't read file ${fileInfo.filename}")
+                            prinErr("ignoring client request")
+                    }
+                }
+            }
+            else {
+                sender ! PeerSideError("file by that name not known")
+            }
     }
 }
 
@@ -100,7 +136,11 @@ class FileDownloader(fileToDownload: FileToDownload) extends Actor {
 
 class ChunkDownloader(fileInfo: FileInfo, chunkIdx: Int, peer: PeerLoc) extends Actor {
 
-    var piecesComplete = ???
+    val piecesComplete = Array.fill[Boolean](PIECES_PER_CHUNK)(false)
+    val receivedChunk = new Array[Byte](BYTES_PER_CHUNK)
+
+    /* for calculating how long it took */
+    var timeRequestSent = ???
 
     def chooseNextPiece(): Int = ???
 
@@ -109,14 +149,17 @@ class ChunkDownloader(fileInfo: FileInfo, chunkIdx: Int, peer: PeerLoc) extends 
         // this actor sends the fileDownloader a PeerTimeout,
         // and the FileDownloader responds with a new PeerLoc
         context.setReceiveTimeout(3.seconds)
-        peer.peerPath ! ChunkRequest(fileInfo, chunkIdx, chooseNextPiece())
+        peer.peerPath ! ChunkRequest(fileInfo, chunkIdx)
     }
 
     override def receive: Actor.Receive = {
-        case Piece(data) ⇒
-            ???
+        case Piece(data, idx) ⇒
             context.setReceiveTimeout(3.seconds)
-        case ReceiveTimeout ⇒
-            context.parent ! TimedOutOn(peer)
+            piecesComplete(idx) = true
+            println("pieces received: "+piecesComplete.filter(identity))
+            for ((b, i) ← data.zipWithIndex)
+                receivedChunk(idx*BYTES_PER_PIECE+i) = b
+        case ReceiveTimeout ⇒ context.parent ! TimedOutOn(peer)
+        case ChunkSuccess ⇒ context.parent ! ChunkComplete(chunkIdx)
     }
 }

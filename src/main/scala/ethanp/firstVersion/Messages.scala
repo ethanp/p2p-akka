@@ -15,13 +15,15 @@ case class ListTracker(trackerID: NodeID)
 case class Swarm(var seeders: Map[NodeID, ActorRef], var leechers: Map[NodeID, ActorRef])
 case class TrackerKnowledge(knowledge: List[FileToDownload])
 case class InformTrackerIHave(clientID: NodeID, fileInfo: FileInfo)
-case class TrackerSideError(filename: String)
+case class TrackerSideError(errorString: String)
+case class PeerSideError(errorString: String)
 case class SuccessfullyAdded(filename: String)
 case class DownloadFile(trackerID: NodeID, filename: String)
 case class ChunkComplete(chunkIdx: Int)
-case class Piece(arr: Array[Byte])
+case class Piece(arr: Array[Byte], pieceIdx: Int)
 case class TimedOutOn(peerLoc: PeerLoc)
-case class ChunkRequest(fileInfo: FileInfo, chunkIdx: Int, pieceIdx: Int)
+case class ChunkRequest(fileInfo: FileInfo, chunkIdx: Int)
+case object ChunkSuccess
 
 object PeerLoc {
     def apply(peerPair: (NodeID, ActorRef)): PeerLoc = PeerLoc(peerPair._1, peerPair._2)
