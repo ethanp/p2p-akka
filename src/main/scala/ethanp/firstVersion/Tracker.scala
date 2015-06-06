@@ -1,6 +1,6 @@
 package ethanp.firstVersion
 
-import akka.actor.Actor
+import akka.actor.{ActorLogging, Actor}
 import ethanp.file.FileToDownload
 import ethanp.firstVersion.Master.NodeID
 
@@ -10,7 +10,7 @@ import scala.collection.mutable
  * Ethan Petuchowski
  * 6/4/15
  */
-class Tracker extends Actor {
+class Tracker extends Actor with ActorLogging {
     var myId: NodeID = -1
     def prin(x: Any) = println(s"s$myId: $x")
 

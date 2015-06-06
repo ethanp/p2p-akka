@@ -21,9 +21,10 @@ case class SuccessfullyAdded(filename: String)
 case class DownloadFile(trackerID: NodeID, filename: String)
 case class ChunkComplete(chunkIdx: Int)
 case class Piece(arr: Array[Byte], pieceIdx: Int)
-case class TimedOutOn(peerLoc: PeerLoc)
+case class ChunkDLFailed(chunkIdx: Int, peerLoc: PeerLoc)
 case class ChunkRequest(fileInfo: FileInfo, chunkIdx: Int)
 case object ChunkSuccess
+case class DownloadSpeed(numBytes: Int)
 
 object PeerLoc {
     def apply(peerPair: (NodeID, ActorRef)): PeerLoc = PeerLoc(peerPair._1, peerPair._2)

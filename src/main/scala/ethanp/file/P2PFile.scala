@@ -32,29 +32,21 @@ trait P2PFile {
 
 case class FileInfo(
     filename: String,
-    numChunks: Int,
     chunkHashes: Array[Sha2],
     fileHash: Sha2,
     fileLength: Int
 ) {
     val lastChunkIdx = (fileLength.toDouble / BYTES_PER_CHUNK).ceil.toInt - 1
     val lastChunkStartLoc = lastChunkIdx * BYTES_PER_CHUNK
+    val numChunks = chunkHashes.length
 
     def numBytesInChunk(chunkIdx: Int): Int =
-        if (chunkIdx < lastChunkIdx) {
-            BYTES_PER_CHUNK
-        }
-        else {
-            fileLength - lastChunkStartLoc
-        }
+        if (chunkIdx < lastChunkIdx) BYTES_PER_CHUNK
+        else fileLength - lastChunkStartLoc
 
     def numPiecesInChunk(chunkIdx: Int): Int =
-        if (chunkIdx < lastChunkIdx) {
-            PIECES_PER_CHUNK
-        }
-        else {
-            (numBytesInChunk(chunkIdx).toDouble / BYTES_PER_PIECE).ceil.toInt
-        }
+        if (chunkIdx < lastChunkIdx) PIECES_PER_CHUNK
+        else (numBytesInChunk(chunkIdx).toDouble / BYTES_PER_PIECE).ceil.toInt
 }
 
 /**
@@ -75,7 +67,7 @@ extends P2PFile
     def getPiece(chunkIdx: Int, pieceIdx: Int): Try[Array[Byte]] = {
         val in = new RandomAccessFile(file, "r")
         val startLoc = chunkIdx * BYTES_PER_CHUNK + pieceIdx * BYTES_PER_PIECE
-        val pieceLen = Math.min(startLoc + BYTES_PER_PIECE, fileInfo.fileLength - startLoc)
+        val pieceLen = Math.min(BYTES_PER_PIECE, fileInfo.fileLength - startLoc)
         try {
             in.seek(startLoc)
             val arr = new Array[Byte](pieceLen)
@@ -85,7 +77,8 @@ extends P2PFile
             if (readComplete) Success(arr)
             else Failure(new ReadFailedException)
         }
-        catch { case e: Exception ⇒ Failure(e) }
+        catch { case e: Throwable ⇒ Failure(e) }
+        finally in.close()
     }
 }
 
@@ -128,13 +121,9 @@ object LocalP2PFile {
             while (!doneReading) {
                 bytesRead = fis.read(readArr, offset, readArr.length - offset)
                 totalRead += bytesRead
-                if (filledReadArray) {
-                    updateHashes()
-                } else if (doneReading) {
-                    updateWithArr(readArr.take(offset+bytesRead))
-                } else {
-                    offset += bytesRead
-                }
+                if (filledReadArray) updateHashes()
+                else if (doneReading) updateWithArr(readArr.take(offset+bytesRead))
+                else offset += bytesRead
             }
         }
 
@@ -146,9 +135,7 @@ object LocalP2PFile {
                     e.printStackTrace()
                     System.exit(5)
             }
-            finally {
-                fileInStream.close()
-            }
+            finally fileInStream.close()
         }
 
         readCarefully()
@@ -164,7 +151,6 @@ object LocalP2PFile {
         LocalP2PFile(
             FileInfo(
                 name,
-                file.length().toInt/BYTES_PER_CHUNK,
                 chunkHashes,
                 fileHash,
                 file.length().toInt
