@@ -33,7 +33,7 @@ object Master extends App {
                 clients += sys.actorOf(Props[Client], "client-" + clients.size)
                 clients(id) ! id
             case "addFile" ⇒ clients(int1) ! LoadFile(slot2, slot3)
-            case "download" ⇒ ???
+            case "download" ⇒ clients(int1) ! DownloadFile(trackerID=int2, filename=slot3)
             case "giveClientTracker" ⇒ clients(int1) ! TrackerLoc(int2, trackers(int2))
             case "listTracker" ⇒ clients(int1) ! ListTracker(int2)
             case a ⇒ println(s"can't handle: $a")

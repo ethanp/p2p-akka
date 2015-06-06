@@ -17,11 +17,14 @@ class Tracker extends Actor {
     val myKnowledge = mutable.Map.empty[String, FileToDownload]
 
     override def receive: Receive = {
+
         case id: Int ⇒
             myId = id
             println(s"tracker set its id to $myId")
+
         case m: ListTracker ⇒
             sender ! TrackerKnowledge(myKnowledge.values.toList)
+
         case InformTrackerIHave(id, info) ⇒
             val desiredFilename = info.filename
             if (myKnowledge contains desiredFilename) {
@@ -55,5 +58,8 @@ class Tracker extends Actor {
                     )
                 sender ! SuccessfullyAdded(desiredFilename)
             }
+
+        case DownloadFile(_, filename) ⇒
+            sender ! myKnowledge(filename) // a "FileToDownload"
     }
 }
