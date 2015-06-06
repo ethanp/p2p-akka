@@ -10,6 +10,7 @@ import ethanp.firstVersion.Master.NodeID
  */
 case class LoadFile(pathString: String, name: String)
 case class TrackerLoc(trackerID: NodeID, trackerPath: ActorRef)
+case class PeerLoc(peerID: NodeID, peerPath: ActorRef)
 case class ListTracker(trackerID: NodeID)
 case class Swarm(var seeders: Map[NodeID, ActorRef], var leechers: Map[NodeID, ActorRef])
 case class TrackerKnowledge(knowledge: List[FileToDownload])
@@ -18,3 +19,10 @@ case class TrackerSideError(filename: String)
 case class SuccessfullyAdded(filename: String)
 case class DownloadFile(trackerID: NodeID, filename: String)
 case class ChunkComplete(chunkIdx: Int)
+case class Piece(arr: Array[Byte])
+case class TimedOutOn(peerLoc: PeerLoc)
+case class ChunkRequest(fileInfo: FileInfo, chunkIdx: Int, pieceIdx: Int)
+
+object PeerLoc {
+    def apply(peerPair: (NodeID, ActorRef)): PeerLoc = PeerLoc(peerPair._1, peerPair._2)
+}

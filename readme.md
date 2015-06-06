@@ -17,7 +17,7 @@ This script will transfer the textfile `testfiles/Test1.txt` between two simulat
     newClient
     newClient
     giveClientTracker 0 0
-    giveClientTracker 0 0
+    giveClientTracker 1 0
     addFile 0 testfiles/Test1.txt test1
     listTracker 1 0
     download 1 0 test1

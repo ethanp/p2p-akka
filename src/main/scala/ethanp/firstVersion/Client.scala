@@ -1,10 +1,11 @@
 package ethanp.firstVersion
 
-import akka.actor.{Actor, Props, ActorRef}
-import ethanp.file.{LocalP2PFile, FileToDownload, P2PFile}
+import akka.actor.{ReceiveTimeout, Actor, Props, ActorRef}
+import ethanp.file.{FileInfo, LocalP2PFile, FileToDownload, P2PFile}
 import ethanp.firstVersion.Master.NodeID
 
 import scala.collection.mutable
+import scala.concurrent.duration._ // implicits like "seconds", etc.
 
 /**
  * Ethan Petuchowski
@@ -57,16 +58,35 @@ class Client extends Actor {
 
         case m : FileToDownload ⇒
             // pass args to actor constructor (runtime IllegalArgumentException if you mess it up!)
-            currentDownloads ::= context.actorOf(Props(classOf[FileDownloader], m)
+            currentDownloads ::= context.actorOf(Props(classOf[FileDownloader], m))
+
+        case ChunkRequest(fileInfo, chunkIdx, pieceIdx) ⇒ ???
     }
 }
 
 /** sure, this is simplistic, but making it better is future work. */
 class FileDownloader(fileToDownload: FileToDownload) extends Actor {
 
-    /** called when the actor is asynchronously started */
+    /** peers we've timed-out upon recently */
+    var quarantine = List.empty[PeerLoc]
+
+    var seederList: Map[NodeID, ActorRef] = fileToDownload.swarm.seeders
+    var chunkDownloads = List.empty[ChunkDownloader]
+
+    var chunksComplete = ???
+
+    def chooseNextChunk(): (Int, PeerLoc) = ???
+
+    def addChunkDownload(): Unit = {
+        val (nextChunkIdx, peerLoc) = chooseNextChunk()
+        chunkDownloads ::= context.actorOf(
+            Props(classOf[ChunkDownloader], fileToDownload.fileInfo, nextChunkIdx, peerLoc))
+    }
+
+    /** called by Akka framework when this Actor is asynchronously started */
     override def preStart(): Unit = {
         // TODO create a bunch of chunk-downloader children which download one piece at a time
+        addChunkDownload()
     }
 
     override def receive: Actor.Receive = {
@@ -74,5 +94,29 @@ class FileDownloader(fileToDownload: FileToDownload) extends Actor {
         //      and fire up new ones based on the speed of download?
         // then once it's all done, become(downloadFinalizerOfSomeSort)
         case ChunkComplete(idx) ⇒ ???
+        case TimedOutOn(peerLoc) ⇒ ???
+    }
+}
+
+class ChunkDownloader(fileInfo: FileInfo, chunkIdx: Int, peer: PeerLoc) extends Actor {
+
+    var piecesComplete = ???
+
+    def chooseNextPiece(): Int = ???
+
+    override def preStart(): Unit = {
+        // set a timer-outer so that if no Piece is received in x-seconds
+        // this actor sends the fileDownloader a PeerTimeout,
+        // and the FileDownloader responds with a new PeerLoc
+        context.setReceiveTimeout(3.seconds)
+        peer.peerPath ! ChunkRequest(fileInfo, chunkIdx, chooseNextPiece())
+    }
+
+    override def receive: Actor.Receive = {
+        case Piece(data) ⇒
+            ???
+            context.setReceiveTimeout(3.seconds)
+        case ReceiveTimeout ⇒
+            context.parent ! TimedOutOn(peer)
     }
 }
