@@ -6,7 +6,10 @@ import ethanp.firstVersion.Master.NodeID
 import ethanp.file.LocalP2PFile._
 
 import scala.collection.mutable
-import scala.concurrent.duration._ // implicits like "seconds", etc.
+import scala.concurrent.duration._
+import scala.util.{Failure, Success}
+
+// implicits like "seconds", etc.
 
 /**
  * Ethan Petuchowski
@@ -24,7 +27,7 @@ class Client extends Actor {
     val trackerIDs = mutable.Map.empty[ActorRef, NodeID]
 
     var mostRecentTrackerListing: List[FileToDownload] = _
-    var currentDownloads = List.empty[FileDownloader]
+    var currentDownloads = List.empty[ActorRef] // FileDownloaders
 
 
     override def receive: Receive = {
@@ -63,7 +66,7 @@ class Client extends Actor {
             // pass args to actor constructor (runtime IllegalArgumentException if you mess it up!)
             currentDownloads ::= context.actorOf(Props(classOf[FileDownloader], m))
 
-        /* at this time, handling ChunkRequests is a *blocking* maneuver */
+        /* at this time, handling ChunkRequests is a *blocking* maneuver for a client */
         case ChunkRequest(fileInfo, chunkIdx) ⇒
             if (localFiles contains fileInfo.filename) {
                 val p2PFile = localFiles(fileInfo.filename)
@@ -73,17 +76,20 @@ class Client extends Actor {
                     // no idear how best to handle failures here...
                     try {
                         var pieceIdx = 0
-                        val piecesThisChunk = p2PFile.numPiecesInChunk(chunkIdx)
-                        var continue = true
-                        while (continue && pieceIdx < piecesThisChunk) {
+                        val piecesThisChunk = p2PFile.fileInfo.numPiecesInChunk(chunkIdx)
+                        var hasntFailed = true
+                        def done = pieceIdx == piecesThisChunk
+                        while (!done && hasntFailed) {
                             p2PFile.getPiece(chunkIdx, pieceIdx) match {
-                                case Some(arr) ⇒
+                                case Success(arr) ⇒
                                     sender ! Piece(arr, pieceIdx)
                                     pieceIdx += 1
-                                case None ⇒ continue = false
+                                case Failure(e) ⇒
+                                    prinErr("request failed with "+e.getClass)
+                                    hasntFailed = false
                             }
                         }
-                        if (continue) {
+                        if (done && hasntFailed) {
                             sender ! ChunkSuccess
                         }
                     }
@@ -107,7 +113,7 @@ class FileDownloader(fileToDownload: FileToDownload) extends Actor {
     var quarantine = List.empty[PeerLoc]
 
     var seederList: Map[NodeID, ActorRef] = fileToDownload.swarm.seeders
-    var chunkDownloads = List.empty[ChunkDownloader]
+    var chunkDownloads = List.empty[ActorRef] // ChunkDownloaders
 
     var chunksComplete = ???
 
@@ -136,8 +142,8 @@ class FileDownloader(fileToDownload: FileToDownload) extends Actor {
 
 class ChunkDownloader(fileInfo: FileInfo, chunkIdx: Int, peer: PeerLoc) extends Actor {
 
-    val piecesComplete = Array.fill[Boolean](PIECES_PER_CHUNK)(false)
-    val receivedChunk = new Array[Byte](BYTES_PER_CHUNK)
+    val piecesRcvd = Array.fill[Boolean](fileInfo numPiecesInChunk chunkIdx)(false)
+    val chunkData = new Array[Byte](fileInfo numBytesInChunk chunkIdx)
 
     /* for calculating how long it took */
     var timeRequestSent = ???
@@ -155,10 +161,10 @@ class ChunkDownloader(fileInfo: FileInfo, chunkIdx: Int, peer: PeerLoc) extends 
     override def receive: Actor.Receive = {
         case Piece(data, idx) ⇒
             context.setReceiveTimeout(3.seconds)
-            piecesComplete(idx) = true
-            println("pieces received: "+piecesComplete.filter(identity))
+            piecesRcvd(idx) = true
+            println("pieces received: "+piecesRcvd.filter(identity))
             for ((b, i) ← data.zipWithIndex)
-                receivedChunk(idx*BYTES_PER_PIECE+i) = b
+                chunkData(idx*BYTES_PER_PIECE+i) = b
         case ReceiveTimeout ⇒ context.parent ! TimedOutOn(peer)
         case ChunkSuccess ⇒ context.parent ! ChunkComplete(chunkIdx)
     }

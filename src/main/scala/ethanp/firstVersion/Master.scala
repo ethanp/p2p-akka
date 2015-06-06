@@ -16,6 +16,7 @@ object Master extends App {
     val trackers = mutable.ArrayBuffer.empty[ActorRef]
     val clients = mutable.ArrayBuffer.empty[ActorRef]
     val sys = ActorSystem("as_if")
+    println("why hello there!")
     while (sc.hasNextLine) {
         val line = sc.nextLine().split(" ")
         lazy val slot1 = line(1)

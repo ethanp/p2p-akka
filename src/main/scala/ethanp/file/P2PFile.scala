@@ -8,6 +8,7 @@ import ethanp.file.LocalP2PFile._
 import ethanp.firstVersion.Swarm
 
 import scala.collection.mutable
+import scala.util.{Success, Failure, Try}
 
 /**
  * Ethan Petuchowski
@@ -33,8 +34,28 @@ case class FileInfo(
     filename: String,
     numChunks: Int,
     chunkHashes: Array[Sha2],
-    fileHash: Sha2
-)
+    fileHash: Sha2,
+    fileLength: Int
+) {
+    val lastChunkIdx = (fileLength.toDouble / BYTES_PER_CHUNK).ceil.toInt - 1
+    val lastChunkStartLoc = lastChunkIdx * BYTES_PER_CHUNK
+
+    def numBytesInChunk(chunkIdx: Int): Int =
+        if (chunkIdx < lastChunkIdx) {
+            BYTES_PER_CHUNK
+        }
+        else {
+            fileLength - lastChunkStartLoc
+        }
+
+    def numPiecesInChunk(chunkIdx: Int): Int =
+        if (chunkIdx < lastChunkIdx) {
+            PIECES_PER_CHUNK
+        }
+        else {
+            (numBytesInChunk(chunkIdx).toDouble / BYTES_PER_PIECE).ceil.toInt
+        }
+}
 
 /**
  * sent through akka by the Tracker, when a file is requested
@@ -51,51 +72,25 @@ case class LocalP2PFile(
 )
 extends P2PFile
 {
-    val lastChunkIdx = (file.length().toDouble / BYTES_PER_CHUNK).ceil.toInt - 1
-    val lastChunkStartLoc = lastChunkIdx * BYTES_PER_CHUNK
-
-    def numPiecesInChunk(chunkIdx: Int): Int = {
-        if (chunkIdx < lastChunkIdx) {
-            PIECES_PER_CHUNK
-        }
-        else {
-            val bytesRemaining = file.length() - lastChunkIdx * BYTES_PER_CHUNK
-            (bytesRemaining.toDouble / BYTES_PER_PIECE).ceil.toInt
-        }
-    }
-
-    def getPiece(chunkIdx: Int, pieceIdx: Int): Option[Array[Byte]] = {
-        def requestFailed() {
-            System.err.println(s"couldn't read file ${fileInfo.filename}")
-            System.err.println("ignoring client request")
-        }
+    def getPiece(chunkIdx: Int, pieceIdx: Int): Try[Array[Byte]] = {
         val in = new RandomAccessFile(file, "r")
         val startLoc = chunkIdx * BYTES_PER_CHUNK + pieceIdx * BYTES_PER_PIECE
-        val fileLen = file.length().toInt
-        val desiredSize = Math.min(startLoc + BYTES_PER_PIECE, fileLen - startLoc)
+        val pieceLen = Math.min(startLoc + BYTES_PER_PIECE, fileInfo.fileLength - startLoc)
         try {
             in.seek(startLoc)
-            val arr = new Array[Byte](desiredSize)
+            val arr = new Array[Byte](pieceLen)
             val read = in.read(arr)
             // we assume the entire piece can be read in one go...
-            if (read != -1 && read < desiredSize) {
-                requestFailed()
-                None
-            }
-            else {
-                Some(arr)
-            }
+            val readComplete = read == -1 || read == pieceLen
+            if (readComplete) Success(arr)
+            else Failure(new ReadFailedException)
         }
-        catch {
-            case e: Exception ⇒
-                requestFailed()
-                None
-        }
+        catch { case e: Exception ⇒ Failure(e) }
     }
 }
 
 object LocalP2PFile {
-
+    class ReadFailedException extends Exception
     val BYTES_PER_PIECE = 4
     val PIECES_PER_CHUNK = 4
     val BYTES_PER_CHUNK = BYTES_PER_PIECE * PIECES_PER_CHUNK
@@ -171,7 +166,8 @@ object LocalP2PFile {
                 name,
                 file.length().toInt/BYTES_PER_CHUNK,
                 chunkHashes,
-                fileHash
+                fileHash,
+                file.length().toInt
             ),
             file
         )
