@@ -22,7 +22,7 @@ class ChunkDownloader(p2PFile: LocalP2PFile, chunkIdx: Int, peer: PeerLoc) exten
 
     /* an IOException here will crash the program. I don't really have any better ideas...retry? */
     def writeChunk() {
-        log.info(s"writing out all ${chunkData.length} bytes of chunk $chunkIdx")
+        log.warning(s"writing out all ${chunkData.length} bytes of chunk $chunkIdx")
         /* use rwd or rws to write synchronously. until I have (hard to debug) issues, I'm going
          * with writing asynchronously */
         val out = new RandomAccessFile(p2PFile.file, "rw")
@@ -46,9 +46,7 @@ class ChunkDownloader(p2PFile: LocalP2PFile, chunkIdx: Int, peer: PeerLoc) exten
     override def receive: Actor.Receive = LoggingReceive {
         case Piece(data, idx) ⇒
             context.parent ! DownloadSpeed(data.length)
-            log.info(s"received piece $idx")
             piecesRcvd(idx) = true
-            log.info("total pieces received: "+piecesRcvd.filter(identity).length)
             for ((b, i) ← data.zipWithIndex) {
                 val byteIdx = idx * BYTES_PER_PIECE + i
                 chunkData(byteIdx) = b

@@ -50,7 +50,7 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
             downloadChunkFrom(nextChunkIdx, peerLoc)
         } else if ((chunksComplete filterNot identity).isEmpty) {
             speedometer.cancel()
-            log.debug(s"transfer of $filename complete!")
+            log.warning(s"transfer of $filename complete!")
             context.parent ! DownloadSuccess(filename)
             self ! PoisonPill
         }
@@ -62,12 +62,14 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
     }
 
     /** called by Akka framework when this Actor is asynchronously started */
-    override def preStart(): Unit = addChunkDownload()
+    override def preStart(): Unit = {
+        (1 to 4).foreach(i ⇒ addChunkDownload())
+    }
 
     /* speed calculations */
     var bytesDLedPastSecond = 0
     val speedometer = context.system.scheduler.schedule(1.second, 1.second) {
-        log.info(f"current DL speed for $filename: ${bytesDLedPastSecond.toDouble / 1000}%.2f")
+        log.warning(f"current DL speed for $filename: ${bytesDLedPastSecond.toDouble / 1000}%.2f")
         bytesDLedPastSecond = 0
     }
 
