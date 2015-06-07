@@ -39,7 +39,7 @@ class ChunkDownloader(p2PFile: LocalP2PFile, chunkIdx: Int, peer: PeerLoc) exten
          *      after inactivity periods). Pass in `Duration.Undefined` to switch off this feature.
          * In another word, I guess I don't need to set another timeout after every message.
          */
-        context.setReceiveTimeout(1.second)
+        context.setReceiveTimeout(15.second)
         peer.peerPath ! ChunkRequest(p2PFile.fileInfo, chunkIdx)
     }
 

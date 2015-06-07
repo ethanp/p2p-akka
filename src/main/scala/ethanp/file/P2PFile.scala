@@ -83,8 +83,8 @@ extends P2PFile
 
 object LocalP2PFile {
     class ReadFailedException extends Exception
-    val BYTES_PER_PIECE = 4
-    val PIECES_PER_CHUNK = 4
+    val BYTES_PER_PIECE = 1024
+    val PIECES_PER_CHUNK = 1024
     val BYTES_PER_CHUNK = BYTES_PER_PIECE * PIECES_PER_CHUNK
 
     /**
@@ -144,9 +144,9 @@ object LocalP2PFile {
     def loadFile(name: String, path: String): LocalP2PFile = {
         val file = new File(path)
         val (chunkHashes, fileHash) = hashTheFile(file)
-        println(s"file hash: $fileHash")
-        println("chunk hashes:\n----------")
-        chunkHashes.foreach(println)
+//        println(s"file hash: $fileHash")
+//        println("chunk hashes:\n----------")
+//        chunkHashes.foreach(println)
         LocalP2PFile(
             FileInfo(
                 name,

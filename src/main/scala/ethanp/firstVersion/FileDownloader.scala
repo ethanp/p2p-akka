@@ -51,6 +51,7 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
         } else if ((chunksComplete filterNot identity).isEmpty) {
             speedometer.cancel()
             log.debug(s"transfer of $filename complete!")
+            context.parent ! DownloadSuccess(filename)
             self ! PoisonPill
         }
     }

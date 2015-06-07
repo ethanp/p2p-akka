@@ -32,6 +32,8 @@ class Client extends Actor with ActorLogging {
     var mostRecentTrackerListing: List[FileToDownload] = _
     var currentDownloads = List.empty[ActorRef] // FileDownloaders
 
+    // for remembering whom to reply to
+    var interestedParty: Option[ActorRef] = None
 
     override def receive: Receive = LoggingReceive {
 
@@ -40,6 +42,7 @@ class Client extends Actor with ActorLogging {
             println(s"client set its id to $myId")
 
         case LoadFile(pathString, name) ⇒
+            interestedParty = Some(sender())
             prin(s"loading $pathString")
             val localFile = LocalP2PFile.loadFile(name, pathString)
             localFiles(name) = localFile
@@ -63,6 +66,7 @@ class Client extends Actor with ActorLogging {
             prin(s"ERROR from ${trackerIDs(sender())}: $errMsg")
 
         case m @ DownloadFile(trackerID, filename) ⇒
+            interestedParty = Some(sender())
             knownTrackers(trackerID) ! m
 
         case m : FileToDownload ⇒
@@ -109,7 +113,8 @@ class Client extends Actor with ActorLogging {
                 sender ! PeerSideError("file by that name not known")
             }
 
-        case SuccessfullyAdded(filename) ⇒ // TODO do something?
+        case m @ SuccessfullyAdded(filename) ⇒ interestedParty.foreach(_ ! m)
+        case m @ DownloadSuccess(filename) ⇒ interestedParty.foreach(_ ! m)
     }
 }
 

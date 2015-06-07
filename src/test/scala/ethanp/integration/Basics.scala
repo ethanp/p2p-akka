@@ -1,10 +1,13 @@
 package ethanp.integration
 
 import akka.actor.{ActorRef, ActorSystem, Props}
+import akka.testkit.{ImplicitSender, TestKit}
 import ethanp.firstVersion._
-import org.scalatest.{FlatSpec, Matchers}
+import org.scalatest.{BeforeAndAfterAll, FlatSpec, Matchers, WordSpecLike}
 
+import scala.concurrent.duration._
 import scala.io.Source.fromFile
+import scala.language.postfixOps
 
 /**
  * Ethan Petuchowski
@@ -37,5 +40,51 @@ class Basics extends FlatSpec with Matchers {
         Thread sleep 150
         println("testing now")
         assert(filesEqual(fromLoc, toLoc))
+    }
+}
+
+class MySpec(_system: ActorSystem) extends TestKit(_system) with ImplicitSender
+with WordSpecLike with Matchers with BeforeAndAfterAll {
+
+    def this() = this(ActorSystem("MySpec"))
+    def filesEqual(path1: String, path2: String): Boolean =
+            fromFile(path1).mkString == fromFile(path2).mkString
+    override def afterAll {
+        TestKit.shutdownActorSystem(system)
+    }
+
+    val filename = "Test2.txt"
+    val fromDir = "testfiles"
+    val toDir = "downloads"
+    val fromLoc = s"$fromDir/$filename"
+    val toLoc = s"$toDir/$filename"
+    "A client actor" must {
+
+        "upload large file to tracker" in {
+            val tracker = system.actorOf(Props[Tracker])
+            val client = system.actorOf(Props[Client])
+            client ! TrackerLoc(0, tracker)
+            within(30 seconds) {
+                client ! LoadFile(fromLoc, filename)
+                expectMsg(SuccessfullyAdded(filename))
+            }
+            expectNoMsg(1 second)
+        }
+        "download large file from peer" in {
+            val tracker = system.actorOf(Props[Tracker])
+            val client = system.actorOf(Props[Client])
+            val client2 = system.actorOf(Props[Client])
+            client ! TrackerLoc(0, tracker)
+            client2 ! TrackerLoc(0, tracker)
+            within(30 seconds) {
+                client ! LoadFile(fromLoc, filename)
+                expectMsg(SuccessfullyAdded(filename))
+            }
+            within(30 seconds) {
+                client2 ! DownloadFile(0, filename)
+                expectMsg(DownloadSuccess(filename))
+            }
+            assert(filesEqual(fromLoc, toLoc))
+        }
     }
 }

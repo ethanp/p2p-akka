@@ -25,6 +25,7 @@ case class ChunkDLFailed(chunkIdx: Int, peerLoc: PeerLoc)
 case class ChunkRequest(fileInfo: FileInfo, chunkIdx: Int)
 case object ChunkSuccess
 case class DownloadSpeed(numBytes: Int)
+case class DownloadSuccess(filename: String)
 
 object PeerLoc {
     def apply(peerPair: (NodeID, ActorRef)): PeerLoc = PeerLoc(peerPair._1, peerPair._2)
