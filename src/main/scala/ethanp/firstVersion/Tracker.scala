@@ -60,6 +60,7 @@ class Tracker extends Actor with ActorLogging {
             }
 
         case DownloadFile(_, filename) ⇒
-            sender ! myKnowledge(filename) // a "FileToDownload"
+            if (myKnowledge contains filename) sender ! myKnowledge(filename) // a FileToDownload
+            else TrackerSideError(s"I don't know a file called $filename")
     }
 }

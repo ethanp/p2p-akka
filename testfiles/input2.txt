@@ -1,0 +1,10 @@
+newTracker
+newClient
+newClient
+newClient
+giveClientTracker 0 0
+giveClientTracker 1 0
+giveClientTracker 2 0
+addFile 0 testfiles/Test1.txt test1
+addFile 1 testfiles/Test1.txt test1
+download 2 0 test1

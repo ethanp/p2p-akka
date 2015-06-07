@@ -12,8 +12,6 @@ import scala.collection.mutable
 import scala.concurrent.duration._
 import scala.util.{Failure, Success}
 
-// implicits like "seconds", etc.
-
 /**
  * Ethan Petuchowski
  * 6/4/15
@@ -132,8 +130,14 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
     /** peers we've timed-out upon recently */
     var quarantine = List.empty[PeerLoc]
 
-    var seederList: Map[NodeID, ActorRef] = fileDLing.swarm.seeders
+    var seederMap: Map[NodeID, ActorRef] = fileDLing.swarm.seeders
     var chunkDownloads = List.empty[ActorRef] // ChunkDownloaders
+
+    var seederNum = 0
+    def nextSeeder = {
+        seederNum += 1
+        seederMap.toList(seederNum % seederMap.size)
+    }
 
     var chunksComplete = new Array[Boolean](fileDLing.fileInfo.numChunks)
     var chunksInProgress = new Array[Boolean](fileDLing.fileInfo.numChunks)
@@ -144,7 +148,7 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
         chunksInProgress.zipWithIndex.collectFirst {
             case (inProgress, idx) if !inProgress ⇒
                 chunksInProgress(idx) = true
-                idx → PeerLoc(seederList.head)
+                idx → PeerLoc(nextSeeder)
         }.get
     }
 
@@ -182,8 +186,8 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
 
         // this is received *after* the ChunkDownloader tried retrying a few times
         case ChunkDLFailed(idx, peerLoc) ⇒
-            seederList -= peerLoc.peerID
-            if (seederList.nonEmpty) downloadChunkFrom(idx, PeerLoc(seederList.head))
+            seederMap -= peerLoc.peerID
+            if (seederMap.nonEmpty) downloadChunkFrom(idx, PeerLoc(nextSeeder))
             else log.warning(s"$filename seederList is empty")
 
         case DownloadSpeed(numBytes) ⇒ bytesDLedPastSecond += numBytes // should be child-actor
@@ -228,7 +232,6 @@ class ChunkDownloader(p2PFile: LocalP2PFile, chunkIdx: Int, peer: PeerLoc) exten
             log.info("total pieces received: "+piecesRcvd.filter(identity).length)
             for ((b, i) ← data.zipWithIndex) {
                 val byteIdx = idx * BYTES_PER_PIECE + i
-                log.info(s"saving byteIdx $byteIdx")
                 chunkData(byteIdx) = b
             }
         case ReceiveTimeout ⇒ context.parent ! ChunkDLFailed(chunkIdx, peer)

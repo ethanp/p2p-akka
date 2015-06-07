@@ -32,7 +32,7 @@ trait P2PFile {
 
 case class FileInfo(
     filename: String,
-    chunkHashes: Array[Sha2],
+    chunkHashes: Vector[Sha2],
     fileHash: Sha2,
     fileLength: Int
 ) {
@@ -91,13 +91,13 @@ object LocalP2PFile {
     /**
      * hash the entire file without ever holding more than a single chunk in memory
      */
-    def hashTheFile(file: File): (Array[Sha2], Sha2) = {
+    def hashTheFile(file: File): (Vector[Sha2], Sha2) = {
 
         val readArr          = new Array[Byte](BYTES_PER_CHUNK)
         val fileDigester     = MessageDigest.getInstance("SHA-256")
         def finalFileDigest  = Sha2.digestToBase64(fileDigester.digest())
         val chunkHashes      = mutable.MutableList.empty[Sha2]
-        def finalChunkHashes = chunkHashes.toArray
+        def finalChunkHashes = chunkHashes.toVector
 
         val len         = file.length()
         var bytesRead   = 1
