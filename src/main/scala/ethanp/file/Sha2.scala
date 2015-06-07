@@ -1,4 +1,4 @@
-package ethanp.common
+package ethanp.file
 
 import java.security.MessageDigest
 import java.util.Base64

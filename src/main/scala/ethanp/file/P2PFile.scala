@@ -3,12 +3,11 @@ package ethanp.file
 import java.io._
 import java.security.MessageDigest
 
-import ethanp.common.Sha2
 import ethanp.file.LocalP2PFile._
 import ethanp.firstVersion.Swarm
 
 import scala.collection.mutable
-import scala.util.{Success, Failure, Try}
+import scala.util.{Failure, Success, Try}
 
 /**
  * Ethan Petuchowski
