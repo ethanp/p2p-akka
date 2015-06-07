@@ -1,15 +1,13 @@
 package ethanp.firstVersion
 
-import java.io.{File, RandomAccessFile}
+import java.io.File
 
 import akka.actor._
 import akka.event.LoggingReceive
-import ethanp.file.LocalP2PFile._
 import ethanp.file.{FileToDownload, LocalP2PFile}
 import ethanp.firstVersion.Master.NodeID
 
 import scala.collection.mutable
-import scala.concurrent.duration._
 import scala.util.{Failure, Success}
 
 /**
@@ -115,129 +113,4 @@ class Client extends Actor with ActorLogging {
     }
 }
 
-/** sure, this is simplistic, but making it better is future work. */
-class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor with ActorLogging {
-    import context._
-    val filename = fileDLing.fileInfo.filename
 
-    val localFile = new File(downloadDir, filename)
-    if (localFile.exists()) {
-        // TODO FIXME!
-        localFile.delete()
-    }
-    val p2PFile = LocalP2PFile(fileDLing.fileInfo, localFile)
-
-    /** peers we've timed-out upon recently */
-    var quarantine = List.empty[PeerLoc]
-
-    var seederMap: Map[NodeID, ActorRef] = fileDLing.swarm.seeders
-    var chunkDownloads = List.empty[ActorRef] // ChunkDownloaders
-
-    var seederNum = 0
-    def nextSeeder = {
-        seederNum += 1
-        seederMap.toList(seederNum % seederMap.size)
-    }
-
-    var chunksComplete = new Array[Boolean](fileDLing.fileInfo.numChunks)
-    var chunksInProgress = new Array[Boolean](fileDLing.fileInfo.numChunks)
-
-    def chooseNextChunk(): (Int, PeerLoc) = {
-        // collectFirst: Finds the first element of the traversable or iterator for which
-        // the given partial function is defined, and applies the partial function to it.
-        chunksInProgress.zipWithIndex.collectFirst {
-            case (inProgress, idx) if !inProgress ⇒
-                chunksInProgress(idx) = true
-                idx → PeerLoc(nextSeeder)
-        }.get
-    }
-
-    def addChunkDownload(): Unit = {
-        if ((chunksInProgress filterNot identity).nonEmpty) {
-            val (nextChunkIdx, peerLoc) = chooseNextChunk()
-            downloadChunkFrom(nextChunkIdx, peerLoc)
-        } else if ((chunksComplete filterNot identity).isEmpty) {
-            speedometer.cancel()
-            log.debug(s"transfer of $filename complete!")
-            self ! PoisonPill
-        }
-    }
-
-    def downloadChunkFrom(chunkIdx: Int, peerLoc: PeerLoc): Unit = {
-        chunkDownloads ::= context.actorOf(
-            Props(classOf[ChunkDownloader], p2PFile, chunkIdx, peerLoc), name = s"chunk-$chunkIdx")
-    }
-
-    /** called by Akka framework when this Actor is asynchronously started */
-    override def preStart(): Unit = addChunkDownload()
-
-    /* speed calculations */
-    var bytesDLedPastSecond = 0
-
-    val speedometer = context.system.scheduler.schedule(1.second, 1.second) {
-        log.info(f"current DL speed for $filename: ${bytesDLedPastSecond.toDouble / 1000}%.2f")
-        bytesDLedPastSecond = 0
-    }
-
-    override def receive: Actor.Receive = LoggingReceive {
-        case ChunkComplete(idx) ⇒
-            chunksComplete(idx) = true
-            addChunkDownload()
-
-        // this is received *after* the ChunkDownloader tried retrying a few times
-        case ChunkDLFailed(idx, peerLoc) ⇒
-            seederMap -= peerLoc.peerID
-            if (seederMap.nonEmpty) downloadChunkFrom(idx, PeerLoc(nextSeeder))
-            else log.warning(s"$filename seederList is empty")
-
-        case DownloadSpeed(numBytes) ⇒ bytesDLedPastSecond += numBytes // should be child-actor
-    }
-}
-
-class ChunkDownloader(p2PFile: LocalP2PFile, chunkIdx: Int, peer: PeerLoc) extends Actor with ActorLogging {
-
-    val piecesRcvd = new Array[Boolean](p2PFile.fileInfo numPiecesInChunk chunkIdx)
-    val chunkData = new Array[Byte](p2PFile.fileInfo numBytesInChunk chunkIdx)
-
-    var numRetries = 0 // TODO not implemented
-
-    /* an IOException here will crash the program. I don't really have any better ideas...retry? */
-    def writeChunk() {
-        log.info(s"writing out all ${chunkData.length} bytes of chunk $chunkIdx")
-        /* use rwd or rws to write synchronously. until I have (hard to debug) issues, I'm going
-         * with writing asynchronously */
-        val out = new RandomAccessFile(p2PFile.file, "rw")
-        // Setting offset beyond end of file does not change file length.
-        // File length changes by writing after offset beyond end of file.
-        out.seek(chunkIdx*BYTES_PER_CHUNK)
-        out.write(chunkData)
-        out.close()
-    }
-
-    override def preStart(): Unit = {
-        /* The docs say:
-         *      Once set, the receive timeout stays in effect (i.e. continues firing repeatedly
-         *      after inactivity periods). Pass in `Duration.Undefined` to switch off this feature.
-         * In another word, I guess I don't need to set another timeout after every message.
-         */
-        context.setReceiveTimeout(1.second)
-        peer.peerPath ! ChunkRequest(p2PFile.fileInfo, chunkIdx)
-    }
-
-    override def receive: Actor.Receive = LoggingReceive {
-        case Piece(data, idx) ⇒
-            context.parent ! DownloadSpeed(data.length)
-            log.info(s"received piece $idx")
-            piecesRcvd(idx) = true
-            log.info("total pieces received: "+piecesRcvd.filter(identity).length)
-            for ((b, i) ← data.zipWithIndex) {
-                val byteIdx = idx * BYTES_PER_PIECE + i
-                chunkData(byteIdx) = b
-            }
-        case ReceiveTimeout ⇒ context.parent ! ChunkDLFailed(chunkIdx, peer)
-        case ChunkSuccess ⇒
-            writeChunk() // blocking call
-            context.parent ! ChunkComplete(chunkIdx)
-            self ! PoisonPill
-    }
-}

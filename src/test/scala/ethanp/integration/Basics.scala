@@ -1,6 +1,6 @@
 package ethanp.integration
 
-import akka.actor.{ActorSystem, Props}
+import akka.actor.{ActorRef, ActorSystem, Props}
 import ethanp.firstVersion._
 import org.scalatest.{FlatSpec, Matchers}
 
@@ -15,14 +15,16 @@ class Basics extends FlatSpec with Matchers {
     def filesEqual(path1: String, path2: String): Boolean =
         fromFile(path1).mkString == fromFile(path2).mkString
 
-    "A downloaded file" should "have the same hash value" in {
-        val sys: ActorSystem = ActorSystem("as_if")
+    def makeActors(num: Int, sys: ActorSystem, props: Props): Vector[ActorRef] =
+        (0 until num).map(i ⇒ sys.actorOf(props, s"client-$i")).toVector
+
+    def makeClients(num: Int)(implicit sys: ActorSystem): Vector[ActorRef] = makeActors(num, sys, Props[Client])
+    def makeTrackers(num: Int)(implicit sys: ActorSystem): Vector[ActorRef] = makeActors(num, sys, Props[Tracker])
+
+    "A downloaded file" should "have the same contents" in {
+        implicit val sys: ActorSystem = ActorSystem("as_if")
         val tracker = sys.actorOf(Props[Tracker], "tracker-0")
-        val clients = List(
-            sys.actorOf(Props[Client], "client-0"),
-            sys.actorOf(Props[Client], "client-1"),
-            sys.actorOf(Props[Client], "client-2")
-        )
+        val clients = makeClients(3)
         val filename = "Test1.txt"
         val fromDir = "testfiles"
         val toDir = "downloads"
