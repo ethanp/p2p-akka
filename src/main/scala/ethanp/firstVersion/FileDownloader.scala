@@ -25,10 +25,10 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
     var seederMap: Map[NodeID, ActorRef] = fileDLing.swarm.seeders
     var chunkDownloads = List.empty[ActorRef] // ChunkDownloaders
 
-    var seederNum = 0
+    var seederNum = 0 // someday will wrap-around zero, bring it on
     def nextSeeder = {
         seederNum += 1
-        seederMap.toList(seederNum % seederMap.size)
+        seederMap.toList((seederNum % seederMap.size).abs)
     }
 
     var chunksComplete = new Array[Boolean](fileDLing.fileInfo.numChunks)
@@ -51,6 +51,7 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
         } else if ((chunksComplete filterNot identity).isEmpty) {
             speedometer.cancel()
             log.warning(s"transfer of $filename complete!")
+            // TODO hash check
             context.parent ! DownloadSuccess(filename)
             self ! PoisonPill
         }

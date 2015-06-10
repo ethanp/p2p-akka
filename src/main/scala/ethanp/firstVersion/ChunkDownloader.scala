@@ -18,10 +18,9 @@ class ChunkDownloader(p2PFile: LocalP2PFile, chunkIdx: Int, peer: PeerLoc) exten
     val piecesRcvd = new Array[Boolean](p2PFile.fileInfo numPiecesInChunk chunkIdx)
     val chunkData = new Array[Byte](p2PFile.fileInfo numBytesInChunk chunkIdx)
 
-    var numRetries = 0 // TODO not implemented
-
     /* an IOException here will crash the program. I don't really have any better ideas...retry? */
     def writeChunk() {
+        // TODO hash check
         log.warning(s"writing out all ${chunkData.length} bytes of chunk $chunkIdx")
         /* use rwd or rws to write synchronously. until I have (hard to debug) issues, I'm going
          * with writing asynchronously */

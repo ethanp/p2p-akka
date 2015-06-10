@@ -1,22 +1,23 @@
 ### A simple peer-to-peer system written using the Akka framework
 
-The design is roughly based on BitTorrent, though very-much simplified.
+Much simplified version of BitTorrent.
 
-I made the decision not to leverage the Cluster framework (within Akka) and the
-built-in DHT stuff etc for now, until I have something working and decent.
-
-Right now, all nodes live in one JVM, and communicate via Akka's in-JVM message-passing
-infrastructure.
-
-Making it truly awesome is "future work". I guess the one "feature" it does have is
-that file integrity is checked using SHA-256 on both a per-chunk and per-file basis
-(I think bit-torrent does this too).
+* A client loads a local file, converts it into a file hash, and an array of
+  "chunk hashes", i.e. hashes of individual chunks of the file, and uploads
+  these hashes along with the file name to all "trackers" it knows.
+    * If the hash matches the hash of any file the tracker currently has by
+      this name, or the tracker has no file with this name, the tracker adds
+      this client to the list of known "seeders" of this file.
+* A client requests the list of seeders of a file from a tracker, and receives
+  their addresses
+* The client initiates chunk requests from 4 seeders at a time, and they send
+  the client their chunks. The client saves these chunks to a local file.
 
 ### Example usage
 
-Fire it up, and paste the following text into your console.
-This script will transfer the textfile `testfiles/Test1.txt`
-from two simulated peers to a simulated client.
+Fire it up, run "`Master.scala`" and paste the following text into your
+console. This script will transfer the textfile `testfiles/Test1.txt` from two
+simulated peers to a simulated client.
 
     newTracker
     newClient
@@ -35,3 +36,25 @@ the file exists (and none other do) on the tracker.
     
     download 2 0 test1
 
+
+### There are 4 different "actors":
+
+* `Tracker` --- waits for people to say they're seeding, or to ask who's
+  seeding
+* `Client`
+    * converts local files into hashes and sends them to Tracker
+    * responds to chunk requests from other clients
+    * Spawns a `FileDownloader` on download request
+* `FileDownloader` --- spawns `ChunkDownloader`s to download chunks
+    * Tells `Client` actor when the download is finished
+    * Spawns 4 concurrent `ChunkDownloaders`
+    * Blacklists peers and retries chunk-downloads when they fail
+* `ChunkDownloader` --- requests a specific chunk of a file from a peer
+    * Recieves the chunk in "pieces" (of the chunk)
+    * Upon receiving a complete "piece", the `FileDownloader` is informed, so
+      that it can update the current download speed, which is printed every
+      second
+    * If no piece arrives beyond a timeout (15 seconds), the download *fails*
+    * When the chunk transfer is complete, the `FileDownloader` is informed, os
+      it can choose a new chunk to download, and a peer to download it from,
+      and spawn a new `ChunkDownloader`
