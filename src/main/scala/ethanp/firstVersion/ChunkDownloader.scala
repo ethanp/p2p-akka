@@ -4,7 +4,7 @@ import java.io.RandomAccessFile
 
 import akka.actor.{PoisonPill, ReceiveTimeout, ActorLogging, Actor}
 import akka.event.LoggingReceive
-import ethanp.file.LocalP2PFile
+import ethanp.file.{Sha2, LocalP2PFile}
 import ethanp.file.LocalP2PFile._
 
 import scala.concurrent.duration._
@@ -19,17 +19,23 @@ class ChunkDownloader(p2PFile: LocalP2PFile, chunkIdx: Int, peer: PeerLoc) exten
     val chunkData = new Array[Byte](p2PFile.fileInfo numBytesInChunk chunkIdx)
 
     /* an IOException here will crash the program. I don't really have any better ideas...retry? */
-    def writeChunk() {
-        // TODO hash check
-        log.warning(s"writing out all ${chunkData.length} bytes of chunk $chunkIdx")
-        /* use rwd or rws to write synchronously. until I have (hard to debug) issues, I'm going
+    def writeChunk() = {
+        if (Sha2.hashOf(chunkData) == p2PFile.fileInfo.chunkHashes(chunkIdx)) {
+            log.warning(s"writing out all ${chunkData.length} bytes of chunk $chunkIdx")
+            /* use rwd or rws to write synchronously. until I have (hard to debug) issues, I'm going
          * with writing asynchronously */
-        val out = new RandomAccessFile(p2PFile.file, "rw")
-        // Setting offset beyond end of file does not change file length.
-        // File length changes by writing after offset beyond end of file.
-        out.seek(chunkIdx*BYTES_PER_CHUNK)
-        out.write(chunkData)
-        out.close()
+            val out = new RandomAccessFile(p2PFile.file, "rw")
+            // Setting offset beyond end of file does not change file length.
+            // File length changes by writing after offset beyond end of file.
+            out.seek(chunkIdx * BYTES_PER_CHUNK)
+            out.write(chunkData)
+            out.close()
+            chunkXferSuccess
+        }
+        else {
+            log.error(s"rcvd chunk for $this didn't hash correctly")
+            chunkXferFailed
+        }
     }
 
     override def preStart(): Unit = {
@@ -42,18 +48,22 @@ class ChunkDownloader(p2PFile: LocalP2PFile, chunkIdx: Int, peer: PeerLoc) exten
         peer.peerPath ! ChunkRequest(p2PFile.fileInfo, chunkIdx)
     }
 
+    def notifyParent(msg: ChunkStatus) {
+        context.parent ! msg
+        self ! PoisonPill
+    }
+    def chunkXferSuccess = notifyParent(ChunkComplete(chunkIdx))
+    def chunkXferFailed = notifyParent(ChunkDLFailed(chunkIdx, peer))
+
     override def receive: Actor.Receive = LoggingReceive {
-        case Piece(data, idx) ⇒
+        case Piece(data, idx) =>
             context.parent ! DownloadSpeed(data.length)
             piecesRcvd(idx) = true
             for ((b, i) ← data.zipWithIndex) {
                 val byteIdx = idx * BYTES_PER_PIECE + i
                 chunkData(byteIdx) = b
             }
-        case ReceiveTimeout ⇒ context.parent ! ChunkDLFailed(chunkIdx, peer)
-        case ChunkSuccess ⇒
-            writeChunk() // blocking call
-            context.parent ! ChunkComplete(chunkIdx)
-            self ! PoisonPill
+        case ReceiveTimeout => chunkXferFailed
+        case ChunkSuccess => writeChunk()
     }
 }

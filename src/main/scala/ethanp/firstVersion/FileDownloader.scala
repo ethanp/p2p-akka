@@ -38,7 +38,7 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
         // collectFirst: Finds the first element of the traversable or iterator for which
         // the given partial function is defined, and applies the partial function to it.
         chunksInProgress.zipWithIndex.collectFirst {
-            case (inProgress, idx) if !inProgress ⇒
+            case (inProgress, idx) if !inProgress =>
                 chunksInProgress(idx) = true
                 idx → PeerLoc(nextSeeder)
         }.get
@@ -51,7 +51,6 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
         } else if ((chunksComplete filterNot identity).isEmpty) {
             speedometer.cancel()
             log.warning(s"transfer of $filename complete!")
-            // TODO hash check
             context.parent ! DownloadSuccess(filename)
             self ! PoisonPill
         }
@@ -64,7 +63,7 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
 
     /** called by Akka framework when this Actor is asynchronously started */
     override def preStart(): Unit = {
-        (1 to 4).foreach(i ⇒ addChunkDownload())
+        (1 to 4).foreach(i => addChunkDownload())
     }
 
     /* speed calculations */
@@ -75,16 +74,16 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
     }
 
     override def receive: Actor.Receive = LoggingReceive {
-        case ChunkComplete(idx) ⇒
+        case ChunkComplete(idx) =>
             chunksComplete(idx) = true
             addChunkDownload()
 
         // this is received *after* the ChunkDownloader tried retrying a few times
-        case ChunkDLFailed(idx, peerLoc) ⇒
+        case ChunkDLFailed(idx, peerLoc) =>
             seederMap -= peerLoc.peerID
             if (seederMap.nonEmpty) downloadChunkFrom(idx, PeerLoc(nextSeeder))
             else log.warning(s"$filename seederList is empty")
 
-        case DownloadSpeed(numBytes) ⇒ bytesDLedPastSecond += numBytes // should be child-actor
+        case DownloadSpeed(numBytes) => bytesDLedPastSecond += numBytes // should be child-actor
     }
 }

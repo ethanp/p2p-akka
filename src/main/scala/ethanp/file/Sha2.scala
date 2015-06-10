@@ -9,8 +9,8 @@ import java.util.Base64
  */
 case class Sha2(str: String = "I am the sha")
 object Sha2 {
-    def digestToBase64(arr: Array[Byte]) = Sha2(Base64.getEncoder.encode(arr))
-    def hashOf(arr: Array[Byte]) = {
+    def digestToBase64(arr: Array[Byte]): Sha2 = Sha2(Base64.getEncoder.encode(arr))
+    def hashOf(arr: Array[Byte]): Sha2 = {
         val digester = MessageDigest.getInstance("SHA-256")
         val digest = digester.digest(arr)
         digestToBase64(digest)

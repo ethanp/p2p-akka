@@ -18,14 +18,14 @@ class Tracker extends Actor with ActorLogging {
 
     override def receive: Receive = {
 
-        case id: Int ⇒
+        case id: Int =>
             myId = id
             println(s"tracker set its id to $myId")
 
-        case m: ListTracker ⇒
+        case m: ListTracker =>
             sender ! TrackerKnowledge(myKnowledge.values.toList)
 
-        case InformTrackerIHave(id, info) ⇒
+        case InformTrackerIHave(id, info) =>
             val desiredFilename = info.filename
             if (myKnowledge contains desiredFilename) {
                 if (myKnowledge(desiredFilename).fileInfo != info) {
@@ -59,7 +59,7 @@ class Tracker extends Actor with ActorLogging {
                 sender ! SuccessfullyAdded(desiredFilename)
             }
 
-        case DownloadFile(_, filename) ⇒
+        case DownloadFile(_, filename) =>
             if (myKnowledge contains filename) sender ! myKnowledge(filename) // a FileToDownload
             else TrackerSideError(s"I don't know a file called $filename")
     }

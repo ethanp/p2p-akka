@@ -64,11 +64,10 @@ do) on the tracker.
 
 1. Optimization: just send *hash* of the `FileInfo` around with the `Piece`s &
    `Chunk`s, not *all* the hashes
-2. Actually *do* the check against the hashes
-3. Better tests
-4. Run in multiple JVMs
-5. Test in multiple JVMs
-6. Turn these into *GitHub Issues*
+2. Better tests
+3. Run in multiple JVMs
+4. Test in multiple JVMs
+5. Turn these into *GitHub Issues*
 
 ### Eventually...
 

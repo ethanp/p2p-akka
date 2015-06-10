@@ -1,7 +1,6 @@
 package ethanp.file
 
 import java.io._
-import java.security.MessageDigest
 
 import ethanp.file.LocalP2PFile._
 import ethanp.firstVersion.Swarm
@@ -32,7 +31,6 @@ trait P2PFile {
 case class FileInfo(
     filename: String,
     chunkHashes: Vector[Sha2],
-    fileHash: Sha2,
     fileLength: Int
 ) {
     val lastChunkIdx = (fileLength.toDouble / BYTES_PER_CHUNK).ceil.toInt - 1
@@ -76,7 +74,7 @@ extends P2PFile
             if (readComplete) Success(arr)
             else Failure(new ReadFailedException)
         }
-        catch { case e: Throwable ⇒ Failure(e) }
+        catch { case e: Throwable => Failure(e) }
         finally in.close()
     }
 }
@@ -90,11 +88,9 @@ object LocalP2PFile {
     /**
      * hash the entire file without ever holding more than a single chunk in memory
      */
-    def hashTheFile(file: File): (Vector[Sha2], Sha2) = {
+    def hashTheFile(file: File): Vector[Sha2] = {
 
         val readArr          = new Array[Byte](BYTES_PER_CHUNK)
-        val fileDigester     = MessageDigest.getInstance("SHA-256")
-        def finalFileDigest  = Sha2.digestToBase64(fileDigester.digest())
         val chunkHashes      = mutable.MutableList.empty[Sha2]
         def finalChunkHashes = chunkHashes.toVector
 
@@ -106,21 +102,18 @@ object LocalP2PFile {
         def doneReading = totalRead >= len
         def filledReadArray = offset + bytesRead == readArr.length
 
-        def updateHashes(): Unit = {
+        def updateHash(): Unit = {
             updateWithArr(readArr)
             offset = 0
         }
 
-        def updateWithArr(arr: Array[Byte]): Unit = {
-            fileDigester.update(arr)
-            chunkHashes += Sha2.hashOf(arr)
-        }
+        def updateWithArr(arr: Array[Byte]): Unit = chunkHashes += Sha2.hashOf(arr)
 
         def readFile(fis: InputStream) {
             while (!doneReading) {
                 bytesRead = fis.read(readArr, offset, readArr.length - offset)
                 totalRead += bytesRead
-                if (filledReadArray) updateHashes()
+                if (filledReadArray) updateHash()
                 else if (doneReading) updateWithArr(readArr.take(offset+bytesRead))
                 else offset += bytesRead
             }
@@ -130,7 +123,7 @@ object LocalP2PFile {
             val fileInStream = new BufferedInputStream(new FileInputStream(file))
             try readFile(fileInStream)
             catch {
-                case e: Exception ⇒
+                case e: Exception =>
                     e.printStackTrace()
                     System.exit(5)
             }
@@ -138,20 +131,16 @@ object LocalP2PFile {
         }
 
         readCarefully()
-        finalChunkHashes → finalFileDigest
+        finalChunkHashes
     }
 
     def loadFile(name: String, path: String): LocalP2PFile = {
         val file = new File(path)
-        val (chunkHashes, fileHash) = hashTheFile(file)
-//        println(s"file hash: $fileHash")
-//        println("chunk hashes:\n----------")
-//        chunkHashes.foreach(println)
+        val chunkHashes = hashTheFile(file)
         LocalP2PFile(
             FileInfo(
                 name,
                 chunkHashes,
-                fileHash,
                 file.length().toInt
             ),
             file

@@ -19,7 +19,7 @@ class Basics extends FlatSpec with Matchers {
         fromFile(path1).mkString == fromFile(path2).mkString
 
     def makeActors(num: Int, sys: ActorSystem, props: Props): Vector[ActorRef] =
-        (0 until num).map(i ⇒ sys.actorOf(props, s"client-$i")).toVector
+        (0 until num).map(i => sys.actorOf(props, s"client-$i")).toVector
 
     def makeClients(num: Int)(implicit sys: ActorSystem): Vector[ActorRef] = makeActors(num, sys, Props[Client])
     def makeTrackers(num: Int)(implicit sys: ActorSystem): Vector[ActorRef] = makeActors(num, sys, Props[Tracker])
