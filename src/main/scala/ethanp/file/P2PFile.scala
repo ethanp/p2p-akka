@@ -44,6 +44,12 @@ case class FileInfo(
     def numPiecesInChunk(chunkIdx: Int): Int =
         if (chunkIdx < lastChunkIdx) PIECES_PER_CHUNK
         else (numBytesInChunk(chunkIdx).toDouble / BYTES_PER_PIECE).ceil.toInt
+
+    /** a sha2 hash of the contents of the FileInfo itself */
+    lazy val abbreviation: Sha2 = {
+        val elemsAsString = filename + chunkHashes.mkString("") + fileLength
+        Sha2(elemsAsString.getBytes)
+    }
 }
 
 /**

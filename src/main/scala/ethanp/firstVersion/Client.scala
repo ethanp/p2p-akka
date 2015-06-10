@@ -4,7 +4,7 @@ import java.io.File
 
 import akka.actor._
 import akka.event.LoggingReceive
-import ethanp.file.{FileToDownload, LocalP2PFile}
+import ethanp.file.{Sha2, FileToDownload, LocalP2PFile}
 import ethanp.firstVersion.Master.NodeID
 
 import scala.collection.mutable
@@ -17,10 +17,9 @@ import scala.util.{Failure, Success}
 class Client extends Actor with ActorLogging {
     log.info("starting up")
     var myId: NodeID = -1
-    def prin(x: Any) = println(s"c$myId: $x")
-    def prinErr(x: Any) = System.err.println(s"c$myId: $x")
 
     val localFiles = mutable.Map.empty[String, LocalP2PFile]
+    val localAbbrevs = mutable.Map.empty[Sha2, String]
 
     /* Note: actor refs CAN be sent to remote machine */
     val knownTrackers = mutable.Map.empty[NodeID, ActorRef]
@@ -43,14 +42,15 @@ class Client extends Actor with ActorLogging {
 
         case LoadFile(pathString, name) =>
             interestedParty = Some(sender())
-            prin(s"loading $pathString")
+            log.info(s"loading $pathString")
             val localFile = LocalP2PFile.loadFile(name, pathString)
             localFiles(name) = localFile
-            prin("sending to known trackers")
+            localAbbrevs(localFile.fileInfo.abbreviation) = name
+            log.info("sending to known trackers")
             knownTrackers.values.foreach(_ ! InformTrackerIHave(myId, localFile.fileInfo))
 
         case TrackerLoc(id, ref) =>
-            prin(s"adding tracker $id")
+            log.info(s"adding tracker $id")
             knownTrackers(id) = ref
             trackerIDs(ref) = id
 
@@ -59,11 +59,11 @@ class Client extends Actor with ActorLogging {
 
         case TrackerKnowledge(files) =>
             mostRecentTrackerListing = files
-            prin(s"tracker ${trackerIDs(sender())} knows of the following files")
+            log.info(s"tracker ${trackerIDs(sender())} knows of the following files")
             files.zipWithIndex foreach { case (f, i) => println(s"${i+1}: ${f.fileInfo.filename}") }
 
         case TrackerSideError(errMsg) =>
-            prin(s"ERROR from ${trackerIDs(sender())}: $errMsg")
+            log.error(s"ERROR from ${trackerIDs(sender())}: $errMsg")
 
         case m @ DownloadFile(trackerID, filename) =>
             interestedParty = Some(sender())
@@ -75,42 +75,41 @@ class Client extends Actor with ActorLogging {
                 Props(classOf[FileDownloader], m, downloadDir), name=s"file-${m.fileInfo.filename}")
 
         /* at this time, handling ChunkRequests is a *blocking* maneuver for a client */
-        case ChunkRequest(fileInfo, chunkIdx) =>
-            if (localFiles contains fileInfo.filename) {
-                val p2PFile = localFiles(fileInfo.filename)
-                if (p2PFile.fileInfo != fileInfo) {
-                    sender ! PeerSideError("file by that name has different hashes")
-                } else {
-                    // no idear how best to handle failures here...
-                    try {
-                        var pieceIdx = 0
-                        val piecesThisChunk = p2PFile.fileInfo.numPiecesInChunk(chunkIdx)
-                        var hasntFailed = true
-                        def done: Boolean = pieceIdx == piecesThisChunk
-                        while (!done && hasntFailed) {
-                            p2PFile.getPiece(chunkIdx, pieceIdx) match {
-                                case Success(arr) =>
-                                    sender ! Piece(arr, pieceIdx)
-                                    pieceIdx += 1
-                                case Failure(e) =>
-                                    prinErr("request failed with "+e.getClass)
-                                    hasntFailed = false
-                            }
-                        }
-                        if (done && hasntFailed) {
-                            sender ! ChunkSuccess
+        case ChunkRequest(infoAbbrev, chunkIdx) =>
+            if (localAbbrevs contains infoAbbrev) {
+                val p2PFile = localFiles(localAbbrevs(infoAbbrev))
+                // no idear how best to handle failures here...
+                try {
+                    var pieceIdx = 0
+                    val piecesThisChunk = p2PFile.fileInfo.numPiecesInChunk(chunkIdx)
+                    var hasntFailed = true
+                    def done: Boolean = pieceIdx == piecesThisChunk
+                    while (!done && hasntFailed) {
+                        p2PFile.getPiece(chunkIdx, pieceIdx) match {
+                            case Success(arr) =>
+                                // doesn't need to pass fileInfo bc it's being sent to
+                                // particular ChunkDownloader
+                                sender ! Piece(arr, pieceIdx)
+                                pieceIdx += 1
+                            case Failure(e) =>
+                                log.error("request failed with "+e.getClass)
+                                hasntFailed = false
                         }
                     }
-                    catch {
-                        case e: Throwable =>
-                            prinErr(e)
-                            prinErr(s"couldn't read file ${fileInfo.filename}")
-                            prinErr("ignoring client request")
+                    if (done && hasntFailed) {
+                        sender ! ChunkSuccess
                     }
+                }
+                catch {
+                    case e: Throwable =>
+                        log.error(e.toString)
+                        log.error(s"couldn't read file ${p2PFile.fileInfo.filename}")
+                        log.error("ignoring client request")
+                        // don't exit or anything. just keep trucking along.
                 }
             }
             else {
-                sender ! PeerSideError("file by that name not known")
+                sender ! PeerSideError("file with that hash not known")
             }
 
         case m @ SuccessfullyAdded(filename) => interestedParty.foreach(_ ! m)

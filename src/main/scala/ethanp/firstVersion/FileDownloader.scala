@@ -15,7 +15,10 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
     val filename = fileDLing.fileInfo.filename
 
     val localFile = new File(downloadDir, filename)
-    if (localFile.exists()) localFile.delete()
+    if (localFile.exists()) {
+        log.error(s"you already have $filename in your filesystem!")
+        context.stop(self) // instantaneous self-immolation
+    }
 
     val p2PFile = LocalP2PFile(fileDLing.fileInfo, localFile)
 
@@ -34,37 +37,35 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
     var chunksComplete = new Array[Boolean](fileDLing.fileInfo.numChunks)
     var chunksInProgress = new Array[Boolean](fileDLing.fileInfo.numChunks)
 
-    def chooseNextChunk(): (Int, PeerLoc) = {
-        // collectFirst: Finds the first element of the traversable or iterator for which
-        // the given partial function is defined, and applies the partial function to it.
+    def addChunkDownload(): Unit = {
+        // kick-off an unstarted chunk
         chunksInProgress.zipWithIndex.collectFirst {
             case (inProgress, idx) if !inProgress =>
                 chunksInProgress(idx) = true
                 idx → PeerLoc(nextSeeder)
-        }.get
-    }
+        } match {
+            case Some((nextChunkIdx, peerLoc)) => downloadChunkFrom(nextChunkIdx, peerLoc)
 
-    def addChunkDownload(): Unit = {
-        if ((chunksInProgress filterNot identity).nonEmpty) {
-            val (nextChunkIdx, peerLoc) = chooseNextChunk()
-            downloadChunkFrom(nextChunkIdx, peerLoc)
-        } else if ((chunksComplete filterNot identity).isEmpty) {
-            speedometer.cancel()
-            log.warning(s"transfer of $filename complete!")
-            context.parent ! DownloadSuccess(filename)
-            self ! PoisonPill
+            // if transfer complete, tell parent (Client)
+            case None if chunksComplete.forall(_ == true) =>
+                speedometer.cancel()
+                log.warning(s"transfer of $filename complete!")
+                context.parent ! DownloadSuccess(filename)
+                self ! PoisonPill
+
+            case _ => log.info("just waiting on transfers to complete")
         }
     }
 
     def downloadChunkFrom(chunkIdx: Int, peerLoc: PeerLoc): Unit = {
         chunkDownloads ::= context.actorOf(
-            Props(classOf[ChunkDownloader], p2PFile, chunkIdx, peerLoc), name = s"chunk-$chunkIdx")
+            Props(classOf[ChunkDownloader], p2PFile, chunkIdx, peerLoc),
+            name = s"chunk-$chunkIdx"
+        )
     }
 
     /** called by Akka framework when this Actor is asynchronously started */
-    override def preStart(): Unit = {
-        (1 to 4).foreach(i => addChunkDownload())
-    }
+    override def preStart(): Unit = (1 to 4).foreach(i => addChunkDownload())
 
     /* speed calculations */
     var bytesDLedPastSecond = 0

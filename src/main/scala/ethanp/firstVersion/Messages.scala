@@ -1,7 +1,7 @@
 package ethanp.firstVersion
 
 import akka.actor.ActorRef
-import ethanp.file.{FileInfo, FileToDownload}
+import ethanp.file.{Sha2, FileInfo, FileToDownload}
 import ethanp.firstVersion.Master.NodeID
 
 /**
@@ -23,7 +23,7 @@ case class Piece(arr: Array[Byte], pieceIdx: Int)
 sealed trait ChunkStatus extends Serializable
 case class ChunkComplete(chunkIdx: Int) extends ChunkStatus
 case class ChunkDLFailed(chunkIdx: Int, peerLoc: PeerLoc) extends ChunkStatus
-case class ChunkRequest(fileInfo: FileInfo, chunkIdx: Int)
+case class ChunkRequest(infoAbbrev: Sha2, chunkIdx: Int)
 case object ChunkSuccess
 case class DownloadSpeed(numBytes: Int)
 case class DownloadSuccess(filename: String)

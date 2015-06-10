@@ -1,5 +1,7 @@
 package ethanp.integration
 
+import java.io.File
+
 import akka.actor.{ActorRef, ActorSystem, Props}
 import akka.testkit.{ImplicitSender, TestKit}
 import ethanp.firstVersion._
@@ -33,6 +35,7 @@ class Basics extends FlatSpec with Matchers {
         val toDir = "downloads"
         val fromLoc = s"$fromDir/$filename"
         val toLoc = s"$toDir/$filename"
+        new File(toLoc).delete()
         clients.foreach(_ ! TrackerLoc(0, tracker))
         clients.take(2).foreach(_ ! LoadFile(fromLoc, filename))
         Thread sleep 100
@@ -58,6 +61,7 @@ with WordSpecLike with Matchers with BeforeAndAfterAll {
     val toDir = "downloads"
     val fromLoc = s"$fromDir/$filename"
     val toLoc = s"$toDir/$filename"
+    new File(toLoc).delete()
     "A client actor" must {
 
         "upload large file to tracker" in {

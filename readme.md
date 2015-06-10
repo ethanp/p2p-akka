@@ -62,12 +62,11 @@ do) on the tracker.
 
 ### Next Steps
 
-1. Optimization: just send *hash* of the `FileInfo` around with the `Piece`s &
-   `Chunk`s, not *all* the hashes
-2. Better tests
-3. Run in multiple JVMs
-4. Test in multiple JVMs
-5. Turn these into *GitHub Issues*
+1. Better tests
+    1. 2 peers have file but 1 *dies* part-way through transfer
+2. Run in multiple JVMs
+3. Test in multiple JVMs
+4. Turn these into *GitHub Issues*
 
 ### Eventually...
 
