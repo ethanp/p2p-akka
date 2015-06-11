@@ -34,7 +34,7 @@ class Tracker extends Actor with ActorLogging {
                 else {
                     val swarm = myKnowledge(desiredFilename).swarm
                     if (swarm.seeders.contains(id)) {
-                        TrackerSideError("already knew you are seeding this file")
+                        sender ! TrackerSideError("already knew you are seeding this file")
                     }
                     else if (swarm.leechers.contains(id)) {
                         swarm.leechers -= id

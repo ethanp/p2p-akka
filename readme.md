@@ -62,12 +62,16 @@ do) on the tracker.
 
 ### Next Steps
 
-1. Better tests
-    1. 2 peers have file but 1 *dies* part-way through transfer
-2. Run in multiple JVMs
-3. Test in multiple JVMs
-4. Turn these into *GitHub Issues*
+#### New Tests
+
+1. 2 peers have file but 1 *dies* part-way through transfer
+2. 1 of two peers sends corrupted chunk, other does rest of file
+3. Download from peer who doesn't have whole file
+    1. Requires new protocol
+3. Download from peer who comes online after transfer starts
 
 ### Eventually...
 
 1. DHT for peer discovery
+2. Run in multiple JVMs
+3. Test in multiple JVMs

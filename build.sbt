@@ -1,4 +1,4 @@
-name := "p2p-akka-cluster"
+name := "p2p-akka"
 
 version := "1.0"
 
