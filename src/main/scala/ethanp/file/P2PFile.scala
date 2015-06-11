@@ -2,8 +2,9 @@ package ethanp.file
 
 import java.io._
 
+import akka.actor.ActorRef
 import ethanp.file.LocalP2PFile._
-import ethanp.firstVersion.Swarm
+import ethanp.firstVersion.Master._
 
 import scala.collection.mutable
 import scala.util.{Failure, Success, Try}
@@ -57,7 +58,8 @@ case class FileInfo(
  */
 case class FileToDownload(
     fileInfo: FileInfo,
-    swarm : Swarm
+    var seeders: Map[NodeID, ActorRef],
+    var leechers: Map[NodeID, ActorRef]
 )
 extends P2PFile
 

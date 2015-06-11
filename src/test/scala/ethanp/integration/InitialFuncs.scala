@@ -6,6 +6,7 @@ import akka.actor.{Actor, ActorRef, ActorSystem}
 import akka.testkit.{DefaultTimeout, ImplicitSender, TestActorRef, TestKit}
 import com.typesafe.config.ConfigFactory
 import ethanp.file.{FileToDownload, FileInfo, LocalP2PFile, Sha2}
+import ethanp.firstVersion.Master.NodeID
 import ethanp.firstVersion._
 import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpecLike}
 
@@ -28,38 +29,101 @@ with DefaultTimeout with ImplicitSender with WordSpecLike with Matchers with Bef
     val tracker = trackerRef.underlyingActor
     val client = clientRef.underlyingActor
 
-    val (name, loc) = "test" -> "testfiles/Test1.txt"
-    val localP2PFile = LocalP2PFile.loadFile(name, loc)
+    val c2: NodeID = 2
+    val c3: NodeID = 3
+    val (testText, testTextLoc) = "test" -> "testfiles/Test1.txt"
+    val (inputText, inputTextLoc) = "test2" -> "testfiles/input2.txt"
+    val testTextP2P = LocalP2PFile.loadFile(testText, testTextLoc)
+    val inputTextP2P = LocalP2PFile.loadFile(inputText, inputTextLoc)
 
     override def afterAll() { shutdown() }
 
     "A LocalP2PFile" should {
         "look as follows" in {
-            localP2PFile should equal (LocalP2PFile(FileInfo(
-                filename = name,
+            testTextP2P should equal (LocalP2PFile(FileInfo(
+                filename = testText,
                 chunkHashes = Vector(Sha2("fND18YuOoWW8VoyGYs0sIVGXbaneeTGKPXVpgNLd9zQ=")),
                 fileLength = 53),
-                file = new File(loc))
+                file = new File(testTextLoc))
             )
         }
     }
 
     "A Tracker" should {
+
+        val knowledge1 = FileToDownload(
+            testTextP2P.fileInfo,
+            seeders = Map(c2 → self),
+            leechers = Map())
+
+        val knowledge2 = FileToDownload(
+            testTextP2P.fileInfo,
+            seeders = Map(c2 → self, c3 → self),
+            leechers = Map())
+
+        val knowledge3 = FileToDownload(
+            inputTextP2P.fileInfo,
+            seeders = Map(c3 → self),
+            leechers = Map())
+
         "successfully add a new file with a seeder" in {
             within(500 millis) {
-                trackerRef ! InformTrackerIHave(2, localP2PFile.fileInfo)
-                expectMsg(SuccessfullyAdded(localP2PFile.fileInfo.filename))
+                trackerRef ! InformTrackerIHave(c2, testTextP2P.fileInfo)
+                expectMsg(SuccessfullyAdded(testTextP2P.fileInfo.filename))
             }
-            tracker.myKnowledge(name) should equal (FileToDownload(
-                localP2PFile.fileInfo, Swarm(Map(2 -> self), Map())))
+            tracker knowledgeOf testText should equal (knowledge1)
         }
         "fail when trying to add a duplicate file" in {
             within(500 millis) {
-                trackerRef ! InformTrackerIHave(2, localP2PFile.fileInfo)
+                trackerRef ! InformTrackerIHave(c2, testTextP2P.fileInfo)
                 expectMsg(TrackerSideError("already knew you are seeding this file"))
             }
-            tracker.myKnowledge(name) should equal (FileToDownload(
-                localP2PFile.fileInfo, Swarm(Map(2 -> self), Map())))
+            tracker knowledgeOf testText should equal (knowledge1)
+        }
+        "successfully add a second seeder" in {
+            within(500 millis) {
+                trackerRef ! InformTrackerIHave(c3, testTextP2P.fileInfo)
+                expectMsg(SuccessfullyAdded(testTextP2P.fileInfo.filename))
+            }
+            tracker knowledgeOf testText should equal (knowledge2)
+        }
+        "successfully add a second file" in {
+            within(500 millis) {
+                trackerRef ! InformTrackerIHave(c3, inputTextP2P.fileInfo)
+                expectMsg(SuccessfullyAdded(inputTextP2P.fileInfo.filename))
+            }
+            tracker knowledgeOf testText should equal (knowledge2)
+            tracker knowledgeOf inputText should equal (knowledge3)
+        }
+        "fail a download request for an unknown file" in {
+            // TODO not passing
+            within(500 millis) {
+                trackerRef ! DownloadFile(c2, "UNKNOWN_FILE")
+                expectMsg(TrackerSideError(s"I don't know a file called UNKNOWN_FILE"))
+            }
+            assert(true)
+        }
+        "succeed a download request for an known file" ignore {
+            within(500 millis) {
+                trackerRef ! DownloadFile(c2, inputText)
+                expectMsg(TrackerSideError(s"I don't know a file called UNKNOWN_FILE"))
+            }
+            assert(true)
+        }
+    }
+
+    "a Client" should {
+        "load a file" ignore {
+
+        }
+        "inform all trackers of loaded file" ignore {
+
+        }
+        "add a tracker loc" ignore {
+
+        }
+        "list a tracker" ignore {
+
         }
     }
 }

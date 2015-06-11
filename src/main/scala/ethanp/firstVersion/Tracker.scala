@@ -14,7 +14,7 @@ class Tracker extends Actor with ActorLogging {
     var myId: NodeID = -1
     def prin(x: Any) = println(s"s$myId: $x")
 
-    val myKnowledge = mutable.Map.empty[String, FileToDownload]
+    val knowledgeOf = mutable.Map.empty[String, FileToDownload]
 
     override def receive: Receive = {
 
@@ -23,16 +23,16 @@ class Tracker extends Actor with ActorLogging {
             println(s"tracker set its id to $myId")
 
         case m: ListTracker =>
-            sender ! TrackerKnowledge(myKnowledge.values.toList)
+            sender ! TrackerKnowledge(knowledgeOf.values.toList)
 
         case InformTrackerIHave(id, info) =>
             val desiredFilename = info.filename
-            if (myKnowledge contains desiredFilename) {
-                if (myKnowledge(desiredFilename).fileInfo != info) {
+            if (knowledgeOf contains desiredFilename) {
+                if (knowledgeOf(desiredFilename).fileInfo != info) {
                     sender ! TrackerSideError(s"different file named $desiredFilename already tracked")
                 }
                 else {
-                    val swarm = myKnowledge(desiredFilename).swarm
+                    val swarm = knowledgeOf(desiredFilename)
                     if (swarm.seeders.contains(id)) {
                         sender ! TrackerSideError("already knew you are seeding this file")
                     }
@@ -48,19 +48,22 @@ class Tracker extends Actor with ActorLogging {
                 }
             }
             else {
-                myKnowledge(desiredFilename) =
+                knowledgeOf(desiredFilename) =
                     FileToDownload(
                         info,
-                        Swarm(
-                            seeders = Map(id → sender),
-                            leechers = Map()
-                        )
-                    )
+                        seeders = Map(id → sender),
+                        leechers = Map())
                 sender ! SuccessfullyAdded(desiredFilename)
             }
 
-        case DownloadFile(_, filename) =>
-            if (myKnowledge contains filename) sender ! myKnowledge(filename) // a FileToDownload
+        case DownloadFile(clientID, filename) =>
+            if (knowledgeOf contains filename) {
+                sender ! knowledgeOf(filename) // msg is of type [FileToDownload]
+                knowledgeOf(filename).leechers += clientID → sender
+                if (knowledgeOf(filename).seeders.contains(clientID)) {
+                    knowledgeOf(filename).seeders -= clientID
+                }
+            }
             else TrackerSideError(s"I don't know a file called $filename")
     }
 }

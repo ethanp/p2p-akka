@@ -67,7 +67,7 @@ class Client extends Actor with ActorLogging {
 
         case m @ DownloadFile(trackerID, filename) =>
             interestedParty = Some(sender())
-            knownTrackers(trackerID) ! m
+            knownTrackers(trackerID) ! DownloadFile(myId, filename)
 
         case m : FileToDownload =>
             // pass args to actor constructor (runtime IllegalArgumentException if you mess it up!)

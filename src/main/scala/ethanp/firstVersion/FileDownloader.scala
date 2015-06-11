@@ -25,7 +25,7 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
     /** peers we've timed-out upon recently */
     var quarantine = List.empty[PeerLoc]
 
-    var seederMap: Map[NodeID, ActorRef] = fileDLing.swarm.seeders
+    var seederMap: Map[NodeID, ActorRef] = fileDLing.seeders
     var chunkDownloads = List.empty[ActorRef] // ChunkDownloaders
 
     var seederNum = 0 // someday will wrap-around zero, bring it on
