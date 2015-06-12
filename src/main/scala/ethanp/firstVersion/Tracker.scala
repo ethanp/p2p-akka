@@ -1,6 +1,6 @@
 package ethanp.firstVersion
 
-import akka.actor.{ActorLogging, Actor}
+import akka.actor.{ActorRef, ActorLogging, Actor}
 import ethanp.file.FileToDownload
 import ethanp.firstVersion.Master.NodeID
 
@@ -15,6 +15,21 @@ class Tracker extends Actor with ActorLogging {
     def prin(x: Any) = println(s"s$myId: $x")
 
     val knowledgeOf = mutable.Map.empty[String, FileToDownload]
+
+    // I would like to know a better way to do this while keeping things immutable
+    def addSeeder(filename: String, id: NodeID, sndr: ActorRef) {
+        knowledgeOf(filename) = knowledgeOf(filename).addSeeder(id, sndr)
+    }
+    def addLeecher(filename: String, id: NodeID, sndr: ActorRef) {
+        knowledgeOf(filename) = knowledgeOf(filename).addLeecher(id, sndr)
+    }
+    def subtractSeeder(filename: String, id: NodeID) {
+        knowledgeOf(filename) = knowledgeOf(filename).subtractSeeder(id)
+    }
+    def subtractLeecher(filename: String, id: NodeID) {
+        knowledgeOf(filename) = knowledgeOf(filename).subtractLeecher(id)
+    }
+
 
     override def receive: Receive = {
 
@@ -37,33 +52,29 @@ class Tracker extends Actor with ActorLogging {
                         sender ! TrackerSideError("already knew you are seeding this file")
                     }
                     else if (swarm.leechers.contains(id)) {
-                        swarm.leechers -= id
-                        swarm.seeders += id → sender
+                        subtractSeeder(desiredFilename, id)
+                        addLeecher(desiredFilename, id, sender())
                         sender ! SuccessfullyAdded(desiredFilename)
                     }
                     else {
-                        swarm.seeders += id → sender
+                        addSeeder(desiredFilename, id, sender())
                         sender ! SuccessfullyAdded(desiredFilename)
                     }
                 }
             }
             else {
-                knowledgeOf(desiredFilename) =
-                    FileToDownload(
-                        info,
-                        seeders = Map(id → sender),
-                        leechers = Map())
+                knowledgeOf(desiredFilename) = FileToDownload(info, Map(id → sender), Map())
                 sender ! SuccessfullyAdded(desiredFilename)
             }
 
         case DownloadFile(clientID, filename) =>
             if (knowledgeOf contains filename) {
                 sender ! knowledgeOf(filename) // msg is of type [FileToDownload]
-                knowledgeOf(filename).leechers += clientID → sender
+                addLeecher(filename, clientID, sender())
                 if (knowledgeOf(filename).seeders.contains(clientID)) {
-                    knowledgeOf(filename).seeders -= clientID
+                    subtractSeeder(filename, clientID)
                 }
             }
-            else TrackerSideError(s"I don't know a file called $filename")
+            else sender ! TrackerSideError(s"I don't know a file called $filename")
     }
 }

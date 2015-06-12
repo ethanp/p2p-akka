@@ -24,6 +24,7 @@ class InitialFuncs extends TestKit(ActorSystem("InitialFuncs", ConfigFactory.par
 with DefaultTimeout with ImplicitSender with WordSpecLike with Matchers with BeforeAndAfterAll {
 
     val trackerRef = TestActorRef[Tracker]
+    val trackerRef2 = TestActorRef[Tracker]
     val clientRef = TestActorRef[Client]
 
     val tracker = trackerRef.underlyingActor
@@ -66,6 +67,11 @@ with DefaultTimeout with ImplicitSender with WordSpecLike with Matchers with Bef
             seeders = Map(c3 → self),
             leechers = Map())
 
+        val knowledge4 = FileToDownload(
+            inputTextP2P.fileInfo,
+            seeders = Map(c3 → self),
+            leechers = Map(c2 → self))
+
         "successfully add a new file with a seeder" in {
             within(500 millis) {
                 trackerRef ! InformTrackerIHave(c2, testTextP2P.fileInfo)
@@ -96,34 +102,44 @@ with DefaultTimeout with ImplicitSender with WordSpecLike with Matchers with Bef
             tracker knowledgeOf inputText should equal (knowledge3)
         }
         "fail a download request for an unknown file" in {
-            // TODO not passing
             within(500 millis) {
                 trackerRef ! DownloadFile(c2, "UNKNOWN_FILE")
                 expectMsg(TrackerSideError(s"I don't know a file called UNKNOWN_FILE"))
             }
-            assert(true)
+            expectNoMsg()
         }
-        "succeed a download request for an known file" ignore {
+        "succeed a download request for an known file" in {
             within(500 millis) {
                 trackerRef ! DownloadFile(c2, inputText)
-                expectMsg(TrackerSideError(s"I don't know a file called UNKNOWN_FILE"))
+                expectMsg(knowledge3)
             }
-            assert(true)
+            tracker knowledgeOf inputText should equal (knowledge4)
         }
     }
 
     "a Client" should {
-        "load a file" ignore {
-
+        "learn about trackers" in {
+            within(500 millis) {
+                clientRef ! TrackerLoc(1, self)
+                clientRef ! TrackerLoc(2, self)
+                expectNoMsg()
+            }
+            client.knownTrackers should have size 2
         }
-        "inform all trackers of loaded file" ignore {
-
+        "load file and inform all trackers" in {
+            within(500 millis) {
+                clientRef ! LoadFile(testTextLoc, testText)
+                val iHave = InformTrackerIHave(-1, testTextP2P.fileInfo)
+                expectMsgAllOf(iHave, iHave)
+            }
+            expectNoMsg()
         }
-        "add a tracker loc" ignore {
-
-        }
-        "list a tracker" ignore {
-
+        "list a tracker" in {
+            within(500 millis) {
+                clientRef ! ListTracker(1)
+                expectMsg(ListTracker(1))
+            }
+            expectNoMsg()
         }
     }
 }

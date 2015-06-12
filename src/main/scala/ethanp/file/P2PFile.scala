@@ -58,10 +58,16 @@ case class FileInfo(
  */
 case class FileToDownload(
     fileInfo: FileInfo,
-    var seeders: Map[NodeID, ActorRef],
-    var leechers: Map[NodeID, ActorRef]
+    seeders: Map[NodeID, ActorRef],
+    leechers: Map[NodeID, ActorRef]
 )
 extends P2PFile
+{
+    def addSeeder(nodeID: NodeID, actorRef: ActorRef) = FileToDownload(fileInfo, seeders + (nodeID → actorRef), leechers)
+    def addLeecher(nodeID: NodeID, actorRef: ActorRef) = FileToDownload(fileInfo, seeders, leechers + (nodeID → actorRef))
+    def subtractSeeder(nodeID: NodeID) = FileToDownload(fileInfo, seeders - nodeID, leechers)
+    def subtractLeecher(nodeID: NodeID) = FileToDownload(fileInfo, seeders, leechers - nodeID)
+}
 
 case class LocalP2PFile(
     fileInfo: FileInfo,
