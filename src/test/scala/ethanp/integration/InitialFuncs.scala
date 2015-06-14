@@ -2,13 +2,14 @@ package ethanp.integration
 
 import java.io.File
 
-import akka.actor.{Actor, ActorRef, ActorSystem}
+import akka.actor.{Props, Actor, ActorRef, ActorSystem}
 import akka.testkit.{DefaultTimeout, ImplicitSender, TestActorRef, TestKit}
 import com.typesafe.config.ConfigFactory
 import ethanp.file.{FileToDownload, FileInfo, LocalP2PFile, Sha2}
 import ethanp.firstVersion.Master.NodeID
 import ethanp.firstVersion._
-import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpecLike}
+import ethanp.integration.InitialFuncs.ForwardingActor
+import org.scalatest.{Inside, BeforeAndAfterAll, Matchers, WordSpecLike}
 
 import scala.collection.immutable
 import scala.concurrent.duration._
@@ -21,14 +22,7 @@ import scala.language.postfixOps
  * based on template at http://doc.akka.io/docs/akka/snapshot/scala/testkit-example.html
  */
 class InitialFuncs extends TestKit(ActorSystem("InitialFuncs", ConfigFactory.parseString(InitialFuncs.config)))
-with DefaultTimeout with ImplicitSender with WordSpecLike with Matchers with BeforeAndAfterAll {
-
-    val trackerRef = TestActorRef[Tracker]
-    val trackerRef2 = TestActorRef[Tracker]
-    val clientRef = TestActorRef[Client]
-
-    val tracker = trackerRef.underlyingActor
-    val client = clientRef.underlyingActor
+with DefaultTimeout with ImplicitSender with WordSpecLike with Matchers with BeforeAndAfterAll with Inside {
 
     val c2: NodeID = 2
     val c3: NodeID = 3
@@ -36,6 +30,26 @@ with DefaultTimeout with ImplicitSender with WordSpecLike with Matchers with Bef
     val (inputText, inputTextLoc) = "test2" -> "testfiles/input2.txt"
     val testTextP2P = LocalP2PFile.loadFile(testText, testTextLoc)
     val inputTextP2P = LocalP2PFile.loadFile(inputText, inputTextLoc)
+
+    val knowledge1 = FileToDownload(
+        testTextP2P.fileInfo,
+        seeders = Map(c2 → self),
+        leechers = Map())
+
+    val knowledge2 = FileToDownload(
+        testTextP2P.fileInfo,
+        seeders = Map(c2 → self, c3 → self),
+        leechers = Map())
+
+    val knowledge3 = FileToDownload(
+        inputTextP2P.fileInfo,
+        seeders = Map(c3 → self),
+        leechers = Map())
+
+    val knowledge4 = FileToDownload(
+        inputTextP2P.fileInfo,
+        seeders = Map(c3 → self),
+        leechers = Map(c2 → self))
 
     override def afterAll() { shutdown() }
 
@@ -50,27 +64,14 @@ with DefaultTimeout with ImplicitSender with WordSpecLike with Matchers with Bef
         }
     }
 
+    // seems like `with DefaultTimeout` had no effect?
+    implicit val duration = 500 millis
+    def waitOnA[T](implicit duration: Duration) = receiveOne(duration).asInstanceOf[T]
+
     "A Tracker" should {
 
-        val knowledge1 = FileToDownload(
-            testTextP2P.fileInfo,
-            seeders = Map(c2 → self),
-            leechers = Map())
-
-        val knowledge2 = FileToDownload(
-            testTextP2P.fileInfo,
-            seeders = Map(c2 → self, c3 → self),
-            leechers = Map())
-
-        val knowledge3 = FileToDownload(
-            inputTextP2P.fileInfo,
-            seeders = Map(c3 → self),
-            leechers = Map())
-
-        val knowledge4 = FileToDownload(
-            inputTextP2P.fileInfo,
-            seeders = Map(c3 → self),
-            leechers = Map(c2 → self))
+        val trackerRef = TestActorRef[Tracker]
+        val tracker = trackerRef.underlyingActor
 
         "successfully add a new file with a seeder" in {
             within(500 millis) {
@@ -113,33 +114,74 @@ with DefaultTimeout with ImplicitSender with WordSpecLike with Matchers with Bef
                 trackerRef ! DownloadFile(c2, inputText)
                 expectMsg(knowledge3)
             }
-            tracker knowledgeOf inputText should equal (knowledge4)
+            tracker knowledgeOf inputText shouldBe knowledge4
+        }
+        // change yo stao up, switch to southpaw
+        "return its knowledge upon request" in {
+            trackerRef ! ListTracker(1)
+            val trackerK = waitOnA[TrackerKnowledge]
+            inside (trackerK) { case TrackerKnowledge(knowledge) =>
+                knowledge should contain only (knowledge2, knowledge4)
+            }
         }
     }
 
-    "a Client" should {
-        "learn about trackers" in {
-            within(500 millis) {
-                clientRef ! TrackerLoc(1, self)
-                clientRef ! TrackerLoc(2, self)
+    "a Client" when {
+        val clientRef = TestActorRef[Client]
+        val client = clientRef.underlyingActor
+
+        "gleaning info from trackers" should {
+            "learn about trackers" in {
+                within(500 millis) {
+                    clientRef ! TrackerLoc(1, self)
+                    clientRef ! TrackerLoc(2, self)
+                    expectNoMsg()
+                }
+                client.knownTrackers should have size 2
+            }
+            "load file and inform all trackers" in {
+                within(500 millis) {
+                    clientRef ! LoadFile(testTextLoc, testText)
+                    val iHave = InformTrackerIHave(-1, testTextP2P.fileInfo)
+                    expectMsgAllOf(iHave, iHave)
+                }
                 expectNoMsg()
             }
-            client.knownTrackers should have size 2
-        }
-        "load file and inform all trackers" in {
-            within(500 millis) {
-                clientRef ! LoadFile(testTextLoc, testText)
-                val iHave = InformTrackerIHave(-1, testTextP2P.fileInfo)
-                expectMsgAllOf(iHave, iHave)
+            "list a tracker" in {
+                within(500 millis) {
+                    clientRef ! ListTracker(1)
+                    expectMsg(ListTracker(1))
+                }
+                expectNoMsg()
             }
-            expectNoMsg()
         }
-        "list a tracker" in {
-            within(500 millis) {
-                clientRef ! ListTracker(1)
-                expectMsg(ListTracker(1))
+    }
+
+    /* TODO how can I make writing these tests get me to the END goal FASTER?
+     * with more focus on speed and less focus on absolute robustness
+     * TODO I need to keep tests at a higher level
+     * this will lead to easier refactoring in these beginning stages anyway
+     */
+    "a FileDownloader" when {
+        "there are 5 seeders and 5 leechers" when {
+            val fwdActors = (1 to 10).map(i =>
+                i → system.actorOf(Props(classOf[ForwardingActor], i, self))
+            )
+            val seeders = (fwdActors take 5).toMap
+            val leechers = (fwdActors drop 5).toMap
+            val ftd = FileToDownload(testTextP2P.fileInfo, seeders, leechers)
+            val dlDir = new File("test_downloads")
+            dlDir.deleteOnExit()
+            val fdRef = TestActorRef(new FileDownloader(ftd, dlDir))
+            "first starting up" should {
+                "check which peers are alive" when {
+                    "2 seeders and 3 leechers are down" ignore {}
+                }
             }
-            expectNoMsg()
+            "set aside peers who don't respond" ignore {
+                // look at internal state
+            }
+            "" ignore {}
         }
     }
 }
@@ -155,7 +197,7 @@ object InitialFuncs {
     /**
      * An Actor that forwards every message to a next Actor
      */
-    class ForwardingActor(next: ActorRef) extends Actor {
+    class ForwardingActor(id: Int, next: ActorRef) extends Actor {
         def receive = {
             case msg => next ! msg
         }
@@ -181,7 +223,7 @@ object InitialFuncs {
     next: ActorRef, head: immutable.Seq[String],
     tail: immutable.Seq[String]) extends Actor {
         def receive = {
-            case msg => {
+            case msg =>
                 head foreach {
                     next ! _
                 }
@@ -189,8 +231,6 @@ object InitialFuncs {
                 tail foreach {
                     next ! _
                 }
-            }
         }
     }
-
 }

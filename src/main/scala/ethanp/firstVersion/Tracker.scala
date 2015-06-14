@@ -8,9 +8,19 @@ import scala.collection.mutable
 
 /**
  * Ethan Petuchowski
- * 6/4/15
+ * Created 6/4/15
+ *
+ * From the Tracker's perspective, it doesn't matter how clients
+ * "interested in the file" are split between seeders and leechers;
+ * but in the eyes of a prospective downloader, it may matter.
  */
 class Tracker extends Actor with ActorLogging {
+
+    // TODO remove the [needless] reliance on myId
+    /**
+     * I don't know why I made the ID so important
+     * bc one can't possibly keep them unique across network partitions...
+     */
     var myId: NodeID = -1
     def prin(x: Any) = println(s"s$myId: $x")
 
@@ -33,9 +43,7 @@ class Tracker extends Actor with ActorLogging {
 
     override def receive: Receive = {
 
-        case id: Int =>
-            myId = id
-            println(s"tracker set its id to $myId")
+        case id: Int => myId = id
 
         case m: ListTracker =>
             sender ! TrackerKnowledge(knowledgeOf.values.toList)
