@@ -2,7 +2,7 @@ package ethanp.firstVersion
 
 import java.io.RandomAccessFile
 
-import akka.actor.{PoisonPill, ReceiveTimeout, ActorLogging, Actor}
+import akka.actor._
 import akka.event.LoggingReceive
 import ethanp.file.{Sha2, LocalP2PFile}
 import ethanp.file.LocalP2PFile._
@@ -13,7 +13,7 @@ import scala.concurrent.duration._
  * Ethan Petuchowski
  * 6/6/15
  */
-class ChunkDownloader(p2PFile: LocalP2PFile, chunkIdx: Int, peer: PeerLoc) extends Actor with ActorLogging {
+class ChunkDownloader(p2PFile: LocalP2PFile, chunkIdx: Int, peerRef: ActorRef) extends Actor with ActorLogging {
 
     val piecesRcvd = new Array[Boolean](p2PFile.fileInfo numPiecesInChunk chunkIdx)
     val chunkData = new Array[Byte](p2PFile.fileInfo numBytesInChunk chunkIdx)
@@ -45,7 +45,7 @@ class ChunkDownloader(p2PFile: LocalP2PFile, chunkIdx: Int, peer: PeerLoc) exten
          * In another word, I guess I don't need to set another timeout after every message.
          */
         context.setReceiveTimeout(15.second)
-        peer.peerPath ! ChunkRequest(p2PFile.fileInfo.abbreviation, chunkIdx)
+        peerRef ! ChunkRequest(p2PFile.fileInfo.abbreviation, chunkIdx)
     }
 
     def notifyParent(msg: ChunkStatus) {
@@ -53,7 +53,7 @@ class ChunkDownloader(p2PFile: LocalP2PFile, chunkIdx: Int, peer: PeerLoc) exten
         self ! PoisonPill
     }
     def chunkXferSuccess = notifyParent(ChunkComplete(chunkIdx))
-    def chunkXferFailed = notifyParent(ChunkDLFailed(chunkIdx, peer))
+    def chunkXferFailed = notifyParent(ChunkDLFailed(chunkIdx, peerRef))
 
     override def receive: Actor.Receive = LoggingReceive {
         case Piece(data, idx) =>

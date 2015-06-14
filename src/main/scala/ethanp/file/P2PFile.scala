@@ -4,7 +4,6 @@ import java.io._
 
 import akka.actor.ActorRef
 import ethanp.file.LocalP2PFile._
-import ethanp.firstVersion.Master._
 
 import scala.collection.mutable
 import scala.util.{Failure, Success, Try}
@@ -58,15 +57,15 @@ case class FileInfo(
  */
 case class FileToDownload(
     fileInfo: FileInfo,
-    seeders: Map[NodeID, ActorRef],
-    leechers: Map[NodeID, ActorRef]
+    seeders: Set[ActorRef],
+    leechers: Set[ActorRef]
 )
 extends P2PFile
 {
-    def addSeeder(nodeID: NodeID, actorRef: ActorRef) = FileToDownload(fileInfo, seeders + (nodeID → actorRef), leechers)
-    def addLeecher(nodeID: NodeID, actorRef: ActorRef) = FileToDownload(fileInfo, seeders, leechers + (nodeID → actorRef))
-    def subtractSeeder(nodeID: NodeID) = FileToDownload(fileInfo, seeders - nodeID, leechers)
-    def subtractLeecher(nodeID: NodeID) = FileToDownload(fileInfo, seeders, leechers - nodeID)
+    def seed_+(ref: ActorRef) = FileToDownload(fileInfo, seeders + ref, leechers)
+    def leech_+(ref: ActorRef) = FileToDownload(fileInfo, seeders, leechers + ref)
+    def seed_-(ref: ActorRef) = FileToDownload(fileInfo, seeders - ref, leechers)
+    def leech_-(ref: ActorRef) = FileToDownload(fileInfo, seeders, leechers - ref)
 }
 
 case class LocalP2PFile(

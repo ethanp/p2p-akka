@@ -25,18 +25,12 @@ object Master extends App {
         lazy val int1 = slot1.toInt
         lazy val int2 = slot2.toInt
         line(0) match {
-            case "newTracker" =>
-                val id = trackers.size
-                trackers += sys.actorOf(Props[Tracker], "tracker-" + id)
-                trackers(id) ! id
-            case "newClient" =>
-                val id = clients.size
-                clients += sys.actorOf(Props[Client], "client-" + clients.size)
-                clients(id) ! id
+            case "newTracker" => trackers += sys.actorOf(Props[Tracker], "tracker-" + trackers.size)
+            case "newClient" => clients += sys.actorOf(Props[Client], "client-" + clients.size)
             case "addFile" => clients(int1) ! LoadFile(slot2, slot3)
-            case "download" => clients(int1) ! DownloadFile(nodeID=int2, filename=slot3)
-            case "giveClientTracker" => clients(int1) ! TrackerLoc(int2, trackers(int2))
-            case "listTracker" => clients(int1) ! ListTracker(int2)
+            case "download" => clients(int1) ! DownloadFileFrom(trackerLoc=trackers(int2), filename=slot3)
+            case "giveClientTracker" => clients(int1) ! TrackerLoc(trackers(int2))
+            case "listTracker" => clients(int1) ! ListTracker(trackers(int2))
             case a => println(s"can't handle: $a")
         }
     }

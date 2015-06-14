@@ -4,8 +4,7 @@ import java.io.File
 
 import akka.actor._
 import akka.event.LoggingReceive
-import ethanp.file.{Sha2, FileToDownload, LocalP2PFile}
-import ethanp.firstVersion.Master.NodeID
+import ethanp.file.{FileToDownload, LocalP2PFile, Sha2}
 
 import scala.collection.mutable
 import scala.util.{Failure, Success}
@@ -15,15 +14,13 @@ import scala.util.{Failure, Success}
  * 6/4/15
  */
 class Client extends Actor with ActorLogging {
-    log.info("starting up")
-    var myId: NodeID = -1
+    log.info(s"client $self starting up")
 
     val localFiles = mutable.Map.empty[String, LocalP2PFile]
     val localAbbrevs = mutable.Map.empty[Sha2, String]
 
     /* Note: actor refs CAN be sent to remote machine */
-    val knownTrackers = mutable.Map.empty[NodeID, ActorRef]
-    val trackerIDs = mutable.Map.empty[ActorRef, NodeID]
+    val knownTrackers = mutable.Set.empty[ActorRef]
 
     val downloadDir = new File("downloads")
     if (!downloadDir.exists()) downloadDir.mkdir()
@@ -36,10 +33,6 @@ class Client extends Actor with ActorLogging {
 
     override def receive: Receive = LoggingReceive {
 
-        case id: Int =>
-            myId = id
-            println(s"client set its id to $myId")
-
         case LoadFile(pathString, name) =>
             interestedParty = Some(sender())
             log.info(s"loading $pathString")
@@ -47,27 +40,28 @@ class Client extends Actor with ActorLogging {
             localFiles(name) = localFile
             localAbbrevs(localFile.fileInfo.abbreviation) = name
             log.info("sending to known trackers")
-            knownTrackers.values.foreach(_ ! InformTrackerIHave(myId, localFile.fileInfo))
+            knownTrackers.foreach(_ ! InformTrackerIHave(localFile.fileInfo))
 
-        case TrackerLoc(id, ref) =>
-            log.info(s"adding tracker $id")
-            knownTrackers(id) = ref
-            trackerIDs(ref) = id
+        case TrackerLoc(ref) => knownTrackers += ref
 
-        case m @ ListTracker(id) =>
-            knownTrackers(id) ! m
+        case m @ ListTracker(ref) => ref ! m
 
         case TrackerKnowledge(files) =>
             mostRecentTrackerListing = files
-            log.info(s"tracker ${trackerIDs(sender())} knows of the following files")
+            log.info(s"tracker ${sender().path} knows of the following files")
             files.zipWithIndex foreach { case (f, i) => println(s"${i+1}: ${f.fileInfo.filename}") }
 
         case TrackerSideError(errMsg) =>
-            log.error(s"ERROR from ${trackerIDs(sender())}: $errMsg")
+            log.error(s"ERROR from tracker ${sender()}: $errMsg")
 
-        case m @ DownloadFile(trackerID, filename) =>
-            interestedParty = Some(sender())
-            knownTrackers(trackerID) ! DownloadFile(myId, filename)
+        case m @ DownloadFileFrom(tracker, filename) =>
+            interestedParty = Some(sender()) // TODO this is for testing, is there some way to get rid of it?
+            if (!(knownTrackers contains tracker)) {
+                sender ! ClientError("I don't know that tracker")
+            }
+            else {
+                tracker ! DownloadFile(filename)
+            }
 
         case m : FileToDownload =>
             // pass args to actor constructor (runtime IllegalArgumentException if you mess it up!)

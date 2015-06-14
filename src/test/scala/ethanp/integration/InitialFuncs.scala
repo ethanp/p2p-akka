@@ -2,7 +2,7 @@ package ethanp.integration
 
 import java.io.File
 
-import akka.actor.{Props, Actor, ActorRef, ActorSystem}
+import akka.actor._
 import akka.testkit.{DefaultTimeout, ImplicitSender, TestActorRef, TestKit}
 import com.typesafe.config.ConfigFactory
 import ethanp.file.{FileToDownload, FileInfo, LocalP2PFile, Sha2}
@@ -31,25 +31,27 @@ with DefaultTimeout with ImplicitSender with WordSpecLike with Matchers with Bef
     val testTextP2P = LocalP2PFile.loadFile(testText, testTextLoc)
     val inputTextP2P = LocalP2PFile.loadFile(inputText, inputTextLoc)
 
+    val bouncers = (1 to 2).map(i => system.actorOf(Props(classOf[ForwardingActor], i, self)))
+
     val knowledge1 = FileToDownload(
         testTextP2P.fileInfo,
-        seeders = Map(c2 → self),
-        leechers = Map())
+        seeders = Set(bouncers.head),
+        leechers = Set())
 
     val knowledge2 = FileToDownload(
         testTextP2P.fileInfo,
-        seeders = Map(c2 → self, c3 → self),
-        leechers = Map())
+        seeders = bouncers.toSet,
+        leechers = Set())
 
     val knowledge3 = FileToDownload(
         inputTextP2P.fileInfo,
-        seeders = Map(c3 → self),
-        leechers = Map())
+        seeders = Set(bouncers.last),
+        leechers = Set())
 
     val knowledge4 = FileToDownload(
         inputTextP2P.fileInfo,
-        seeders = Map(c3 → self),
-        leechers = Map(c2 → self))
+        seeders = Set(bouncers.last),
+        leechers = Set(bouncers.head))
 
     override def afterAll() { shutdown() }
 
@@ -75,28 +77,28 @@ with DefaultTimeout with ImplicitSender with WordSpecLike with Matchers with Bef
 
         "successfully add a new file with a seeder" in {
             within(500 millis) {
-                trackerRef ! InformTrackerIHave(c2, testTextP2P.fileInfo)
+                trackerRef ! InformTrackerIHave(testTextP2P.fileInfo)
                 expectMsg(SuccessfullyAdded(testTextP2P.fileInfo.filename))
             }
             tracker knowledgeOf testText should equal (knowledge1)
         }
         "fail when trying to add a duplicate file" in {
             within(500 millis) {
-                trackerRef ! InformTrackerIHave(c2, testTextP2P.fileInfo)
+                trackerRef ! InformTrackerIHave(testTextP2P.fileInfo)
                 expectMsg(TrackerSideError("already knew you are seeding this file"))
             }
             tracker knowledgeOf testText should equal (knowledge1)
         }
         "successfully add a second seeder" in {
             within(500 millis) {
-                trackerRef ! InformTrackerIHave(c3, testTextP2P.fileInfo)
+                trackerRef ! InformTrackerIHave(testTextP2P.fileInfo)
                 expectMsg(SuccessfullyAdded(testTextP2P.fileInfo.filename))
             }
             tracker knowledgeOf testText should equal (knowledge2)
         }
         "successfully add a second file" in {
             within(500 millis) {
-                trackerRef ! InformTrackerIHave(c3, inputTextP2P.fileInfo)
+                trackerRef ! InformTrackerIHave(inputTextP2P.fileInfo)
                 expectMsg(SuccessfullyAdded(inputTextP2P.fileInfo.filename))
             }
             tracker knowledgeOf testText should equal (knowledge2)
@@ -104,21 +106,21 @@ with DefaultTimeout with ImplicitSender with WordSpecLike with Matchers with Bef
         }
         "fail a download request for an unknown file" in {
             within(500 millis) {
-                trackerRef ! DownloadFile(c2, "UNKNOWN_FILE")
+                trackerRef ! DownloadFile("UNKNOWN_FILE")
                 expectMsg(TrackerSideError(s"I don't know a file called UNKNOWN_FILE"))
             }
             expectNoMsg()
         }
         "succeed a download request for an known file" in {
             within(500 millis) {
-                trackerRef ! DownloadFile(c2, inputText)
+                trackerRef ! DownloadFile(inputText)
                 expectMsg(knowledge3)
             }
             tracker knowledgeOf inputText shouldBe knowledge4
         }
         // change yo stao up, switch to southpaw
         "return its knowledge upon request" in {
-            trackerRef ! ListTracker(1)
+            trackerRef ! ListTracker(self)
             val trackerK = waitOnA[TrackerKnowledge]
             inside (trackerK) { case TrackerKnowledge(knowledge) =>
                 knowledge should contain only (knowledge2, knowledge4)
@@ -133,8 +135,8 @@ with DefaultTimeout with ImplicitSender with WordSpecLike with Matchers with Bef
         "gleaning info from trackers" should {
             "learn about trackers" in {
                 within(500 millis) {
-                    clientRef ! TrackerLoc(1, self)
-                    clientRef ! TrackerLoc(2, self)
+                    clientRef ! TrackerLoc(self)
+                    clientRef ! TrackerLoc(self)
                     expectNoMsg()
                 }
                 client.knownTrackers should have size 2
@@ -142,15 +144,15 @@ with DefaultTimeout with ImplicitSender with WordSpecLike with Matchers with Bef
             "load file and inform all trackers" in {
                 within(500 millis) {
                     clientRef ! LoadFile(testTextLoc, testText)
-                    val iHave = InformTrackerIHave(-1, testTextP2P.fileInfo)
+                    val iHave = InformTrackerIHave(testTextP2P.fileInfo)
                     expectMsgAllOf(iHave, iHave)
                 }
                 expectNoMsg()
             }
             "list a tracker" in {
                 within(500 millis) {
-                    clientRef ! ListTracker(1)
-                    expectMsg(ListTracker(1))
+                    clientRef ! ListTracker(self)
+                    expectMsg(ListTracker(self))
                 }
                 expectNoMsg()
             }
@@ -164,18 +166,22 @@ with DefaultTimeout with ImplicitSender with WordSpecLike with Matchers with Bef
      */
     "a FileDownloader" when {
         "there are 5 seeders and 5 leechers" when {
-            val fwdActors = (1 to 10).map(i =>
-                i → system.actorOf(Props(classOf[ForwardingActor], i, self))
-            )
-            val seeders = (fwdActors take 5).toMap
-            val leechers = (fwdActors drop 5).toMap
+            val fwdActors = (1 to 10).map(i => system.actorOf(Props(classOf[ForwardingActor], i, self)))
+            val seeders = (fwdActors take 5).toSet
+            val leechers = (fwdActors drop 5).toSet
             val ftd = FileToDownload(testTextP2P.fileInfo, seeders, leechers)
+            val liveSeeders = seeders take 3
+            val deadSeeders = seeders drop 3
+            val liveLeechers = leechers take 2
+            val deadLeechers = leechers drop 2
             val dlDir = new File("test_downloads")
             dlDir.deleteOnExit()
-            val fdRef = TestActorRef(new FileDownloader(ftd, dlDir))
+            val fileDLRef = TestActorRef(new FileDownloader(ftd, dlDir))
             "first starting up" should {
                 "check which peers are alive" when {
-                    "2 seeders and 3 leechers are down" ignore {}
+                    "2 seeders and 3 leechers are down" ignore {
+
+                    }
                 }
             }
             "set aside peers who don't respond" ignore {

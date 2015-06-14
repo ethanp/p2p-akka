@@ -5,10 +5,10 @@ import java.io.File
 import akka.actor._
 import akka.event.LoggingReceive
 import ethanp.file.{FileToDownload, LocalP2PFile}
-import ethanp.firstVersion.Master.NodeID
 
-import scala.concurrent.duration._
+import scala.collection.mutable.ArrayBuffer
 import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.duration._
 
 /** sure, this is simplistic, but making it better is future work. */
 class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor with ActorLogging {
@@ -23,17 +23,20 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
     val p2PFile = LocalP2PFile(fileDLing.fileInfo, localFile)
 
     /** peers we've timed-out upon recently */
-    var quarantine = List.empty[PeerLoc]
+    var quarantine = Set.empty[ActorRef]
 
-    var seederMap: Map[NodeID, ActorRef] = fileDLing.seeders
-    var chunkDownloads = List.empty[ActorRef] // ChunkDownloaders
+    var seeders: Set[ActorRef] = fileDLing.seeders
 
-    var seederNum = 0 // someday will wrap-around zero, bring it on
-    def nextSeeder = {
+    // scala cookbook says this is the "go to" mutable sequence
+    val chunkDownloads = ArrayBuffer.empty[ActorRef]
+
+    var seederNum = 0 // someday will wrap-around zero, but I'm ready
+    def nextSeeder: ActorRef = {
         seederNum += 1
-        seederMap.toList((seederNum % seederMap.size).abs)
+        seeders.toList((seederNum % seeders.size).abs)
     }
 
+    // Array uses the JVM's built-in native-array thingy
     var chunksComplete = new Array[Boolean](fileDLing.fileInfo.numChunks)
     var chunksInProgress = new Array[Boolean](fileDLing.fileInfo.numChunks)
 
@@ -42,7 +45,7 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
         chunksInProgress.zipWithIndex.collectFirst {
             case (inProgress, idx) if !inProgress =>
                 chunksInProgress(idx) = true
-                idx → PeerLoc(nextSeeder)
+                idx → nextSeeder
         } match {
             case Some((nextChunkIdx, peerLoc)) => downloadChunkFrom(nextChunkIdx, peerLoc)
 
@@ -57,9 +60,9 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
         }
     }
 
-    def downloadChunkFrom(chunkIdx: Int, peerLoc: PeerLoc): Unit = {
-        chunkDownloads ::= context.actorOf(
-            Props(classOf[ChunkDownloader], p2PFile, chunkIdx, peerLoc),
+    def downloadChunkFrom(chunkIdx: Int, peerRef: ActorRef): Unit = {
+        chunkDownloads += context.actorOf(
+            Props(classOf[ChunkDownloader], p2PFile, chunkIdx, peerRef),
             name = s"chunk-$chunkIdx"
         )
     }
@@ -80,9 +83,9 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
             addChunkDownload()
 
         // this is received *after* the ChunkDownloader tried retrying a few times
-        case ChunkDLFailed(idx, peerLoc) =>
-            seederMap -= peerLoc.peerID
-            if (seederMap.nonEmpty) downloadChunkFrom(idx, PeerLoc(nextSeeder))
+        case ChunkDLFailed(idx, peerRef) =>
+            seeders -= peerRef
+            if (seeders.nonEmpty) downloadChunkFrom(idx, nextSeeder)
             else log.warning(s"$filename seederList is empty")
 
         case DownloadSpeed(numBytes) => bytesDLedPastSecond += numBytes // should be child-actor
