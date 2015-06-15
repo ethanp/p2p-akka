@@ -1,4 +1,4 @@
-package ethanp.integration
+package ethanp.integration.old_tests
 
 import java.io.File
 
@@ -14,6 +14,8 @@ import scala.language.postfixOps
 /**
  * Ethan Petuchowski
  * 6/6/15
+ *
+ * The tests in this file probably won't work anymore. I have a new protocol now.
  */
 class Basics extends FlatSpec with Matchers {
 

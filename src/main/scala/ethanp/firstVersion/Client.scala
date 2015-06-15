@@ -29,12 +29,12 @@ class Client extends Actor with ActorLogging {
     var currentDownloads = List.empty[ActorRef] // FileDownloaders
 
     // for remembering whom to reply to
-    var interestedParty: Option[ActorRef] = None
+    var testerActor: Option[ActorRef] = None
 
     override def receive: Receive = LoggingReceive {
 
         case LoadFile(pathString, name) =>
-            interestedParty = Some(sender())
+            testerActor = Some(sender())
             log.info(s"loading $pathString")
             val localFile = LocalP2PFile.loadFile(name, pathString)
             localFiles(name) = localFile
@@ -55,7 +55,7 @@ class Client extends Actor with ActorLogging {
             log.error(s"ERROR from tracker ${sender()}: $errMsg")
 
         case m @ DownloadFileFrom(tracker, filename) =>
-            interestedParty = Some(sender()) // TODO this is for testing, is there some way to get rid of it?
+            testerActor = Some(sender())
             if (!(knownTrackers contains tracker)) {
                 sender ! ClientError("I don't know that tracker")
             }
@@ -99,15 +99,15 @@ class Client extends Actor with ActorLogging {
                         log.error(e.toString)
                         log.error(s"couldn't read file ${p2PFile.fileInfo.filename}")
                         log.error("ignoring client request")
-                        // don't exit or anything. just keep trucking along.
+                        // don't exit or anything. just keep trucking.
                 }
             }
             else {
                 sender ! PeerSideError("file with that hash not known")
             }
 
-        case m @ SuccessfullyAdded(filename) => interestedParty.foreach(_ ! m)
-        case m @ DownloadSuccess(filename) => interestedParty.foreach(_ ! m)
+        case m @ SuccessfullyAdded(filename) => testerActor.foreach(_ ! m)
+        case m @ DownloadSuccess(filename) => testerActor.foreach(_ ! m)
     }
 }
 

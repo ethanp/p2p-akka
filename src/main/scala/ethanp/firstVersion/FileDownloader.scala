@@ -6,13 +6,13 @@ import akka.actor._
 import akka.event.LoggingReceive
 import ethanp.file.{FileToDownload, LocalP2PFile}
 
-import scala.collection.mutable.ArrayBuffer
+import scala.collection.mutable
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 
-/** sure, this is simplistic, but making it better is future work. */
 class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor with ActorLogging {
     val filename = fileDLing.fileInfo.filename
+    val numChunks = fileDLing.fileInfo.numChunks
 
     val localFile = new File(downloadDir, filename)
     if (localFile.exists()) {
@@ -20,55 +20,57 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
         context.stop(self) // instantaneous self-immolation
     }
 
+    // this is "shared-nothing", so I don't think local vars need to be `private`?
     val p2PFile = LocalP2PFile(fileDLing.fileInfo, localFile)
 
     /** peers we've timed-out upon recently */
     var quarantine = Set.empty[ActorRef]
 
-    var seeders: Set[ActorRef] = fileDLing.seeders
+    // will be updated periodically after new queries of the trackers
+    val potentialDownloadees: Set[ActorRef] = fileDLing.seeders ++ fileDLing.leechers
 
-    // scala cookbook says this is the "go to" mutable sequence
-    val chunkDownloads = ArrayBuffer.empty[ActorRef]
+    var liveSeeders: Set[ActorRef] = fileDLing.seeders // TODO start out empty and fill with Pings
 
-    var seederNum = 0 // someday will wrap-around zero, but I'm ready
+    val chunkDownloaders = mutable.Set.empty[ActorRef]
+
+    var nextPosInt = 0
     def nextSeeder: ActorRef = {
-        seederNum += 1
-        seeders.toList((seederNum % seeders.size).abs)
+        nextPosInt = (nextPosInt + 1) % Integer.MAX_VALUE
+        liveSeeders.toList(nextPosInt % liveSeeders.size)
     }
 
-    // Array uses the JVM's built-in native-array thingy
-    var chunksComplete = new Array[Boolean](fileDLing.fileInfo.numChunks)
-    var chunksInProgress = new Array[Boolean](fileDLing.fileInfo.numChunks)
+    val incompleteChunks = mutable.BitSet(1 to numChunks:_*)
+    val notStartedChunks = mutable.BitSet(1 to numChunks:_*)
 
     def addChunkDownload(): Unit = {
         // kick-off an unstarted chunk
-        chunksInProgress.zipWithIndex.collectFirst {
-            case (inProgress, idx) if !inProgress =>
-                chunksInProgress(idx) = true
-                idx → nextSeeder
-        } match {
-            case Some((nextChunkIdx, peerLoc)) => downloadChunkFrom(nextChunkIdx, peerLoc)
-
-            // if transfer complete, tell parent (Client)
-            case None if chunksComplete.forall(_ == true) =>
-                speedometer.cancel()
-                log.warning(s"transfer of $filename complete!")
-                context.parent ! DownloadSuccess(filename)
-                self ! PoisonPill
-
-            case _ => log.info("just waiting on transfers to complete")
+        if (notStartedChunks.nonEmpty) {
+            val nextIdx = notStartedChunks.head
+            notStartedChunks.remove(nextIdx)
+            downloadChunkFrom(nextIdx, nextSeeder)
+        }
+        else if (incompleteChunks.nonEmpty) {
+            log.info("just waiting on transfers to complete")
+        } else {
+            speedometer.cancel() // may be unecessary since I'm poisoning myself anyway
+            log.warning(s"transfer of $filename complete!")
+            context.parent ! DownloadSuccess(filename)
+            self ! PoisonPill
         }
     }
 
     def downloadChunkFrom(chunkIdx: Int, peerRef: ActorRef): Unit = {
-        chunkDownloads += context.actorOf(
+        chunkDownloaders += context.actorOf(
             Props(classOf[ChunkDownloader], p2PFile, chunkIdx, peerRef),
             name = s"chunk-$chunkIdx"
         )
     }
 
     /** called by Akka framework when this Actor is asynchronously started */
-    override def preStart(): Unit = (1 to 4).foreach(i => addChunkDownload())
+    override def preStart(): Unit = {
+        // TODO should be pinging potentialDownloadees instead!
+        (1 to 4).foreach(i => addChunkDownload())
+    }
 
     /* speed calculations */
     var bytesDLedPastSecond = 0
@@ -79,13 +81,13 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
 
     override def receive: Actor.Receive = LoggingReceive {
         case ChunkComplete(idx) =>
-            chunksComplete(idx) = true
+            incompleteChunks(idx) = true
             addChunkDownload()
 
         // this is received *after* the ChunkDownloader tried retrying a few times
         case ChunkDLFailed(idx, peerRef) =>
-            seeders -= peerRef
-            if (seeders.nonEmpty) downloadChunkFrom(idx, nextSeeder)
+            liveSeeders -= peerRef
+            if (liveSeeders.nonEmpty) downloadChunkFrom(idx, nextSeeder)
             else log.warning(s"$filename seederList is empty")
 
         case DownloadSpeed(numBytes) => bytesDLedPastSecond += numBytes // should be child-actor

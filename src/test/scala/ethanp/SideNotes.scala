@@ -1,4 +1,4 @@
-package ethanp.integration
+package ethanp
 
 import org.scalatest.{BeforeAndAfterAll, Inside, Matchers, WordSpecLike}
 

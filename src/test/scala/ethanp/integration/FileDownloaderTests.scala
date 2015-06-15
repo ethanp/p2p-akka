@@ -9,12 +9,14 @@ import ethanp.integration.BaseTester.ForwardingActor
  * Ethan Petuchowski
  * 6/14/15
  */
-class Level2 extends BaseTester {
-    /* TODO how can I make writing these tests get me to the END goal FASTER?
-     * with more focus on speed and less focus on absolute robustness
-     * TODO I need to keep tests at a higher level
-     * this will lead to easier refactoring in these beginning stages anyway
+class FileDownloaderTests extends BaseTester {
+
+    /* TODO Tests are a MEANS to an END
+     *      no need to focus on 'absolute robustness'
+     * TODO keep tests at a higher level
+     *      this will make refactoring simpler
      */
+
     "a FileDownloader" when {
         "there are 5 seeders and 5 leechers" when {
             val fwdActors = (1 to 10).map(i => system.actorOf(Props(classOf[ForwardingActor], self)))

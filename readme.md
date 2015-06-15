@@ -15,6 +15,10 @@ Much simplified version of BitTorrent.
 
 ### Example usage
 
+**This was how the first prototype worked, it may not work anymore as I've moved to TDD.
+So you may want to just run the test cases instead. There will be a new version of the
+*example usage* once the new protocol is implemented.**
+
 Fire it up, run "`Master.scala`" and paste the following text into your
 console. This script will transfer the textfile `testfiles/Test1.txt` from two
 simulated peers to a simulated client.
@@ -61,6 +65,8 @@ do) on the tracker.
       and spawn a new `ChunkDownloader`
 
 ### Next Steps
+
+1. Download from other leechers.
 
 #### New Tests
 

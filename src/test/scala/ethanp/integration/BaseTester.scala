@@ -1,10 +1,14 @@
 package ethanp.integration
 
-import akka.actor.{Actor, ActorRef, ActorSystem}
-import akka.testkit.{DefaultTimeout, ImplicitSender, TestKit}
+import akka.actor.{Actor, ActorRef, ActorSystem, Props}
+import akka.testkit.{ImplicitSender, TestKit}
 import com.typesafe.config.ConfigFactory
 import ethanp.file.LocalP2PFile
+import ethanp.integration.BaseTester.ForwardingActor
 import org.scalatest.{BeforeAndAfterAll, Inside, Matchers, WordSpecLike}
+
+import scala.concurrent.duration._
+import scala.language.postfixOps
 
 /**
  * Ethan Petuchowski
@@ -13,14 +17,23 @@ import org.scalatest.{BeforeAndAfterAll, Inside, Matchers, WordSpecLike}
  * based on template at http://doc.akka.io/docs/akka/snapshot/scala/testkit-example.html
  */
 
-class BaseTester extends TestKit(ActorSystem("InitialFuncs", ConfigFactory.parseString(BaseTester.config)))
-with DefaultTimeout with ImplicitSender with WordSpecLike with Matchers with BeforeAndAfterAll with Inside
+class BaseTester
+extends TestKit(ActorSystem("InitialFuncs", ConfigFactory.parseString(BaseTester.config)))
+with ImplicitSender // allows you to use `self` as an actor
+with WordSpecLike   // "an x" when { "condition" should { "do something" in { assertions } } }
+with Matchers       //  e.g. shouldBe, have length, startWith, include, etc.
+with BeforeAndAfterAll // allow beforeAll and afterAll methods
+with Inside         // allows `inside (caseClass) { case CaseClass(abcd) => abcd shouldBe x }`
 {
+    override def afterAll() { shutdown() }
     val (testText, testTextLoc) = "test" -> "testfiles/Test1.txt"
     val (inputText, inputTextLoc) = "test2" -> "testfiles/input2.txt"
     val testTextP2P = LocalP2PFile.loadFile(testText, testTextLoc)
     val inputTextP2P = LocalP2PFile.loadFile(inputText, inputTextLoc)
-    override def afterAll() { shutdown() }
+    val bouncers = (1 to 2).map(i => system.actorOf(Props(classOf[ForwardingActor], self)))
+    implicit val duration = 300 millis
+    def waitOnA[T](implicit duration: Duration) = receiveOne(duration).asInstanceOf[T]
+    def quickly[T](f: => T): Unit = { within[T](duration)(f); assert(true) /*for highlighting*/ }
 }
 
 object BaseTester {
