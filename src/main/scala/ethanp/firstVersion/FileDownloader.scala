@@ -6,7 +6,6 @@ import akka.actor._
 import akka.event.LoggingReceive
 import ethanp.file.{FileToDownload, LocalP2PFile}
 
-import scala.collection.immutable.SortedSet
 import scala.collection.mutable
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
@@ -102,8 +101,7 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
 
     /** called by Akka framework when this Actor is asynchronously started */
     override def preStart(): Unit = {
-        // TODO should be pinging potentialDownloadees instead!
-        potentialDownloadees.foreach(_ ! Ping())
+        potentialDownloadees.foreach(_ ! Ping(abbreviation))
     }
 
     /* speed calculations */

@@ -3,6 +3,8 @@ package ethanp.firstVersion
 import akka.actor.ActorRef
 import ethanp.file.{FileInfo, FileToDownload, Sha2}
 
+import scala.collection.BitSet
+
 /**
  * Ethan Petuchowski
  * 6/4/15
@@ -27,3 +29,5 @@ case object ChunkSuccess
 case class DownloadSpeed(numBytes: Int)
 case class DownloadSuccess(filename: String)
 case class Ping(infoAbbrev: Sha2)
+case object Seeding
+case class Leeching(unavblty: BitSet)

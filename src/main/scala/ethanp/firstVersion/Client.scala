@@ -108,6 +108,14 @@ class Client extends Actor with ActorLogging {
 
         case m @ SuccessfullyAdded(filename) => testerActor.foreach(_ ! m)
         case m @ DownloadSuccess(filename) => testerActor.foreach(_ ! m)
+
+        case Ping(abbrev) =>
+            // respond with if I am seeder or leecher; & if leecher which chunks I have
+            if (localAbbrevs contains abbrev) {
+                val unavbl = localFiles(localAbbrevs(abbrev)).unavblty
+                if (unavbl.isEmpty) sender ! Seeding
+                else sender ! Leeching(unavbl.toImmutable)
+            }
     }
 }
 

@@ -36,12 +36,10 @@ class FileDownloaderTests extends BaseTester {
                 val ftd = FileToDownload(fileInfo, seeders, leechers)
 
                 "first starting up" should {
-                    val fDlRef = TestActorRef(Props(Class[FileDownloader], ftd, dlDir))
-                    "check which peers are alive" when {
+                    val fDlRef = TestActorRef(Props(classOf[FileDownloader], ftd, dlDir))
+                    "check which peers are alive" in {
                         quickly {
-                            expectNOf(10) {
-                                Ping(fileInfo.abbreviation)
-                            }
+                            expectNOf(10, Ping(fileInfo.abbreviation))
                         }
                     }
                 }

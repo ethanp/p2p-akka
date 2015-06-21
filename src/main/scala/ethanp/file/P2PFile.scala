@@ -70,7 +70,11 @@ extends P2PFile
 
 case class LocalP2PFile(
     fileInfo: FileInfo,
-    file: File // data loc for this file on the local file system
+    file: File, // data loc for this file on the local file system
+
+//  TODO make sure the local file and this bitset don't end up being places of
+//  shared mutable state. done sloppily this could lead to bugs.
+    unavblty: mutable.BitSet = new mutable.BitSet() // TODO FIX defaults to all zeros
 )
 extends P2PFile
 {
