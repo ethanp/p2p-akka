@@ -3,6 +3,9 @@ package ethanp.integration
 import java.io.File
 
 import akka.actor.Props
+import akka.testkit.TestActorRef
+import ethanp.file.FileToDownload
+import ethanp.firstVersion.{Ping, FileDownloader}
 import ethanp.integration.BaseTester.ForwardingActor
 
 /**
@@ -19,21 +22,27 @@ class FileDownloaderTests extends BaseTester {
 
     "a FileDownloader" when {
         "there are 5 seeders and 5 leechers" when {
-            val fwdActors = (1 to 10).map(i => system.actorOf(Props(classOf[ForwardingActor], self)))
-            val seeders = (fwdActors take 5).toSet
-            val leechers = (fwdActors drop 5).toSet
+            val fwdActors = (1 to 10).map(i => system.actorOf(Props(classOf[ForwardingActor], self))).toSet
+            val (seeders, leechers) = splitAtIndex(fwdActors, 5)
 //            val ftd = FileToDownload(testTextP2P.fileInfo, seeders, leechers)
-            val liveSeeders = seeders take 3
-            val deadSeeders = seeders drop 3
-            val liveLeechers = leechers take 2
-            val deadLeechers = leechers drop 2
-            val dlDir = new File("test_downloads")
-            dlDir.deleteOnExit()
-//            val fileDLRef = TestActorRef(new FileDownloader(ftd, dlDir))
-            "first starting up" should {
-                "check which peers are alive" when {
-                    "2 seeders and 3 leechers are down" ignore {
 
+            "2 seeders and 3 leechers are down" when {
+                val (liveSeeders, deadSeeders) = splitAtIndex(seeders, 3)
+                val (liveLeechers, deadLeechers) = splitAtIndex(leechers, 2)
+                val dlDir = new File("test_downloads")
+                dlDir.deleteOnExit()
+
+                val fileInfo = testTextP2P.fileInfo
+                val ftd = FileToDownload(fileInfo, seeders, leechers)
+
+                "first starting up" should {
+                    val fDlRef = TestActorRef(Props(Class[FileDownloader], ftd, dlDir))
+                    "check which peers are alive" when {
+                        quickly {
+                            expectNOf(10) {
+                                Ping(fileInfo.abbreviation)
+                            }
+                        }
                     }
                 }
             }

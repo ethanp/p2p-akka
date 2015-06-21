@@ -26,3 +26,4 @@ case class ChunkRequest(infoAbbrev: Sha2, chunkIdx: Int)
 case object ChunkSuccess
 case class DownloadSpeed(numBytes: Int)
 case class DownloadSuccess(filename: String)
+case class Ping(infoAbbrev: Sha2)
