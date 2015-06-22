@@ -123,11 +123,8 @@ class Client extends Actor with ActorLogging {
             else getDownloader(abbrev) match {
                 case None => sender ! PeerSideError("I don't have that file")
                 case Some(fileDLer) =>
-                    val sen = sender() // must store ref for use in closure!
-                    val resp: Future[immutable.BitSet] = (fileDLer ? Ping(abbrev)).mapTo[BitSet]
-                    resp.onSuccess {
-                        case b => sen ! Leeching(b)
-                    }
+                    val sen = sender() // must store ref for use in async closure!
+                    (fileDLer ? Ping(abbrev)).mapTo[BitSet].onSuccess { case b => sen ! Leeching(b) }
             }
     }
 }

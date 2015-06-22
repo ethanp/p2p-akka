@@ -11,7 +11,7 @@ import scala.collection.mutable
  * 6/3/15
  */
 object Master extends App {
-    type NodeID = Int
+    type NodeID = Int // side note: `type` in a `class` makes a "type member" NOT an "alias"
     val sc = new Scanner(System.in)
     val trackers = mutable.ArrayBuffer.empty[ActorRef]
     val clients = mutable.ArrayBuffer.empty[ActorRef]
