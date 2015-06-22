@@ -20,7 +20,7 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
     }
 
     // this is "shared-nothing", so I don't think local vars need to be `private`?
-    val p2PFile = LocalP2PFile(fileDLing.fileInfo, localFile)
+    val p2PFile = LocalP2PFile(fileDLing.fileInfo, localFile, unavbl = mutable.BitSet(0 to numChunks:_*))
 
     /** peers we've timed-out upon recently */
     var quarantine = Set.empty[ActorRef]
@@ -107,7 +107,8 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
     /* speed calculations */
     var bytesDLedPastSecond = 0
     val speedometer = context.system.scheduler.schedule(1.second, 1.second) {
-        log.warning(f"current DL speed for $filename: ${bytesDLedPastSecond.toDouble / 1000}%.2f")
+        // TODO this throws a null pointer exception (??!)
+//        log.warning(f"current DL speed for $filename: ${bytesDLedPastSecond.toDouble / 1000}%.2f")
         bytesDLedPastSecond = 0
     }
 
@@ -125,7 +126,7 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
 
         case DownloadSpeed(numBytes) => bytesDLedPastSecond += numBytes // should be child-actor
 
-        // TODO this is where we should be calling addChunkDownload()
-        case Ping(_) => ???
+        case Ping(abbrev) => if (abbrev == abbreviation) sender ! incompleteChunks.toImmutable
+
     }
 }

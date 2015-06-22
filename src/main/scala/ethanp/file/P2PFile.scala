@@ -74,7 +74,7 @@ case class LocalP2PFile(
 
 //  TODO make sure the local file and this bitset don't end up being places of
 //  shared mutable state. done sloppily this could lead to bugs.
-    unavblty: mutable.BitSet = new mutable.BitSet() // TODO FIX defaults to all zeros
+    unavbl: mutable.BitSet
 )
 extends P2PFile
 {
@@ -160,7 +160,8 @@ object LocalP2PFile {
                 chunkHashes,
                 file.length().toInt
             ),
-            file
+            file = file,
+            unavbl = new mutable.BitSet(chunkHashes.length) // if you loaded the file, you must have all of it
         )
     }
 }

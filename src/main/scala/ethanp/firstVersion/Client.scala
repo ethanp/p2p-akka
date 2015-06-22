@@ -4,9 +4,13 @@ import java.io.File
 
 import akka.actor._
 import akka.event.LoggingReceive
-import ethanp.file.{FileToDownload, LocalP2PFile, Sha2}
+import akka.pattern.ask
+import ethanp.file.{FileInfo, FileToDownload, LocalP2PFile, Sha2}
 
+import scala.collection.immutable.BitSet
 import scala.collection.mutable
+import scala.collection.immutable
+import scala.concurrent.Future
 import scala.util.{Failure, Success}
 
 /**
@@ -26,7 +30,9 @@ class Client extends Actor with ActorLogging {
     if (!downloadDir.exists()) downloadDir.mkdir()
 
     var mostRecentTrackerListing: List[FileToDownload] = _
-    var currentDownloads = List.empty[ActorRef] // FileDownloaders
+    var currentDownloads = Map.empty[FileInfo, ActorRef] // FileDownloaders
+
+    def getDownloader(abbrev: Sha2): Option[ActorRef] = currentDownloads.find(_._1.abbreviation == abbrev).map(_._2)
 
     // for remembering whom to reply to
     var testerActor: Option[ActorRef] = None
@@ -65,7 +71,7 @@ class Client extends Actor with ActorLogging {
 
         case m : FileToDownload =>
             // pass args to actor constructor (runtime IllegalArgumentException if you mess it up!)
-            currentDownloads ::= context.actorOf(
+            currentDownloads += m.fileInfo -> context.actorOf(
                 Props(classOf[FileDownloader], m, downloadDir), name=s"file-${m.fileInfo.filename}")
 
         /* at this time, handling ChunkRequests is a *blocking* maneuver for a client */
@@ -110,11 +116,18 @@ class Client extends Actor with ActorLogging {
         case m @ DownloadSuccess(filename) => testerActor.foreach(_ ! m)
 
         case Ping(abbrev) =>
-            // respond with if I am seeder or leecher; & if leecher which chunks I have
-            if (localAbbrevs contains abbrev) {
-                val unavbl = localFiles(localAbbrevs(abbrev)).unavblty
-                if (unavbl.isEmpty) sender ! Seeding
-                else sender ! Leeching(unavbl.toImmutable)
+            // Respond with if I am seeder or leecher; & if leecher which chunks I have.
+            // This file (probably) shouldn't EXIST in localFiles until it's done,
+            // so instead we must query the FileDownloader actor.
+            if (localAbbrevs contains abbrev) sender ! Seeding
+            else getDownloader(abbrev) match {
+                case None => sender ! PeerSideError("I don't have that file")
+                case Some(fileDLer) =>
+                    val sen = sender() // must store ref for use in closure!
+                    val resp: Future[immutable.BitSet] = (fileDLer ? Ping(abbrev)).mapTo[BitSet]
+                    resp.onSuccess {
+                        case b => sen ! Leeching(b)
+                    }
             }
     }
 }

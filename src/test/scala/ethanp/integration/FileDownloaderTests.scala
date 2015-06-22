@@ -2,11 +2,14 @@ package ethanp.integration
 
 import java.io.File
 
-import akka.actor.Props
+import akka.actor.{ActorRef, Props}
 import akka.testkit.TestActorRef
 import ethanp.file.FileToDownload
-import ethanp.firstVersion.{Ping, FileDownloader}
+import ethanp.firstVersion.{Leeching, Seeding, Ping, FileDownloader}
 import ethanp.integration.BaseTester.ForwardingActor
+
+import scala.collection.immutable
+import scala.collection.mutable
 
 /**
  * Ethan Petuchowski
@@ -34,20 +37,33 @@ class FileDownloaderTests extends BaseTester {
 
                 val fileInfo = testTextP2P.fileInfo
                 val ftd = FileToDownload(fileInfo, seeders, leechers)
-
+                val fDlRef = TestActorRef(Props(classOf[FileDownloader], ftd, dlDir))
                 "first starting up" should {
-                    val fDlRef = TestActorRef(Props(classOf[FileDownloader], ftd, dlDir))
                     "check which peers are alive" in {
                         quickly {
                             expectNOf(10, Ping(fileInfo.abbreviation))
                         }
                     }
                 }
+
+                "receiving chunk infos" should {
+                    "believe seeders are seeders" in {
+                        liveSeeders.foreach(s => fDlRef.tell(Seeding, s))
+
+                        // TODO verify relevant state
+                    }
+                    "know avbl of leechers" in {
+                        var avbl = new mutable.BitSet(fileInfo.numChunks)
+                        for ((leecher, idx) <- liveLeechers.zipWithIndex) {
+                            fDlRef.tell(Leeching((avbl += idx).toImmutable), leecher)
+                        }
+                        // TODO verify relevant state
+                    }
+                    "leave aside peers who don't respond" in {
+                        // TODO verify relevant state
+                    }
+                }
             }
-            "set aside peers who don't respond" ignore {
-                // look at internal state
-            }
-            "" ignore {}
         }
     }
 }
