@@ -6,9 +6,10 @@ import akka.actor._
 import akka.event.LoggingReceive
 import ethanp.file.{FileToDownload, LocalP2PFile}
 
-import scala.collection.mutable
+import scala.collection.{BitSet, mutable}
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
+import scala.language.postfixOps
 
 class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor with ActorLogging {
     import fileDLing.fileInfo._ // <- that's really cool
@@ -26,11 +27,13 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
     var quarantine = Set.empty[ActorRef]
 
     // will be updated periodically after new queries of the trackers
-    val potentialDownloadees: Set[ActorRef] = fileDLing.seeders ++ fileDLing.leechers
+    var potentialDownloadees: Set[ActorRef] = fileDLing.seeders ++ fileDLing.leechers
 
-    var liveSeeders: Set[ActorRef] = fileDLing.seeders // TODO start out empty and fill with Pings
+    def nonResponsiveDownloadees = potentialDownloadees -- liveSeeders -- liveLeechers.keySet
 
-    var livePeers = Vector.empty[FilePeer] // TODO use livePeers.max to get the next one to DL from
+    // added to by responses from the peers when they get Ping'd
+    var liveSeeders = Set.empty[ActorRef]
+    var liveLeechers = Map.empty[ActorRef, BitSet]
 
     /** They're ordered by how desirable they are to download from */
     sealed abstract class FilePeer(val actorRef: ActorRef) extends Ordered[FilePeer] {
@@ -90,7 +93,8 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
         }
     }
 
-    def nextToDLFrom(nextIdx: Int): ActorRef = livePeers.filter(_ hasChunk nextIdx).max.actorRef
+    // TODO haha this is a terrible algorithm.
+    def nextToDLFrom(nextIdx: Int): ActorRef = liveSeeders.head
 
     def downloadChunkFrom(chunkIdx: Int, peerRef: ActorRef): Unit = {
         chunkDownloaders += context.actorOf(
@@ -106,7 +110,7 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
 
     /* speed calculations */
     var bytesDLedPastSecond = 0
-    val speedometer = context.system.scheduler.schedule(1.second, 1.second) {
+    val speedometer = context.system.scheduler.schedule(1 second, 1 second) {
         // TODO this throws a null pointer exception (??!)
 //        log.warning(f"current DL speed for $filename: ${bytesDLedPastSecond.toDouble / 1000}%.2f")
         bytesDLedPastSecond = 0
@@ -126,7 +130,10 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
 
         case DownloadSpeed(numBytes) => bytesDLedPastSecond += numBytes // should be child-actor
 
+        // this comes from this node's Client actor who wants to know how much of the file is still incomplete
         case Ping(abbrev) => if (abbrev == abbreviation) sender ! incompleteChunks.toImmutable
 
+        case Seeding => liveSeeders += sender
+        case Leeching(unavbty) => liveLeechers += sender -> unavbty
     }
 }

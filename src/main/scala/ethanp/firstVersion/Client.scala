@@ -9,9 +9,9 @@ import ethanp.file.{FileInfo, FileToDownload, LocalP2PFile, Sha2}
 
 import scala.collection.immutable.BitSet
 import scala.collection.mutable
-import scala.collection.immutable
-import scala.concurrent.Future
+import scala.language.postfixOps
 import scala.util.{Failure, Success}
+import scala.concurrent.duration._
 
 /**
  * Ethan Petuchowski
@@ -25,6 +25,8 @@ class Client extends Actor with ActorLogging {
 
     /* Note: actor refs CAN be sent to remote machine */
     val knownTrackers = mutable.Set.empty[ActorRef]
+
+    implicit val timeout: akka.util.Timeout = 2 seconds
 
     val downloadDir = new File("downloads")
     if (!downloadDir.exists()) downloadDir.mkdir()
@@ -116,15 +118,21 @@ class Client extends Actor with ActorLogging {
         case m @ DownloadSuccess(filename) => testerActor.foreach(_ ! m)
 
         case Ping(abbrev) =>
+            import scala.concurrent.ExecutionContext.Implicits.global
+
             // Respond with if I am seeder or leecher; & if leecher which chunks I have.
             // This file (probably) shouldn't EXIST in localFiles until it's done,
             // so instead we must query the FileDownloader actor.
             if (localAbbrevs contains abbrev) sender ! Seeding
             else getDownloader(abbrev) match {
                 case None => sender ! PeerSideError("I don't have that file")
+
+                // I'm still downloading that file, so query DLer
+                // for completion bitset and pass it to peer
                 case Some(fileDLer) =>
                     val sen = sender() // must store ref for use in async closure!
-                    (fileDLer ? Ping(abbrev)).mapTo[BitSet].onSuccess { case b => sen ! Leeching(b) }
+                    val dlerBitSet = (fileDLer ? Ping(abbrev)).mapTo[BitSet]
+                    dlerBitSet onSuccess { case b => sen ! Leeching(b) }
             }
     }
 }

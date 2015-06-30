@@ -35,9 +35,10 @@ class FileDownloaderTests extends BaseTester {
                 val dlDir = new File("test_downloads")
                 dlDir.deleteOnExit()
 
-                val fileInfo = testTextP2P.fileInfo
+                val fileInfo = inputTextP2P.fileInfo
                 val ftd = FileToDownload(fileInfo, seeders, leechers)
                 val fDlRef = TestActorRef(Props(classOf[FileDownloader], ftd, dlDir))
+                val fDlPtr: FileDownloader = fDlRef.underlyingActor
                 "first starting up" should {
                     "check which peers are alive" in {
                         quickly {
@@ -46,21 +47,25 @@ class FileDownloaderTests extends BaseTester {
                     }
                 }
 
-                "receiving chunk infos" should {
+                "getting chunk availabilities" should {
                     "believe seeders are seeders" in {
-                        liveSeeders.foreach(s => fDlRef.tell(Seeding, s))
-
-                        // TODO verify relevant state
+                        liveSeeders.foreach(fDlRef.tell(Seeding, _))
+                        assert(liveSeeders forall fDlPtr.liveSeeders.contains)
                     }
                     "know avbl of leechers" in {
-                        var avbl = new mutable.BitSet(fileInfo.numChunks)
+                        // test file has "3" chunks
+                        var unavbl = new mutable.BitSet(fileInfo.numChunks)
                         for ((leecher, idx) <- liveLeechers.zipWithIndex) {
-                            fDlRef.tell(Leeching((avbl += idx).toImmutable), leecher)
+                            fDlRef.tell(Leeching((unavbl += idx).toImmutable), leecher)
                         }
-                        // TODO verify relevant state
+
+                        unavbl = new mutable.BitSet(fileInfo.numChunks)
+                        for ((leecher, idx) <- liveLeechers.zipWithIndex) {
+                            assert(fDlPtr.liveLeechers(leecher) == (unavbl += idx).toImmutable)
+                        }
                     }
                     "leave aside peers who don't respond" in {
-                        // TODO verify relevant state
+                        fDlPtr.nonResponsiveDownloadees should have size 5
                     }
                 }
             }

@@ -99,7 +99,7 @@ extends P2PFile
 object LocalP2PFile {
     class ReadFailedException extends Exception
     val BYTES_PER_PIECE = 1024
-    val PIECES_PER_CHUNK = 1024
+    val PIECES_PER_CHUNK = 3
     val BYTES_PER_CHUNK = BYTES_PER_PIECE * PIECES_PER_CHUNK
 
     /**
