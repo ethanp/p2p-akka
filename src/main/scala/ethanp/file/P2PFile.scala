@@ -164,4 +164,6 @@ object LocalP2PFile {
             unavbl = new mutable.BitSet(chunkHashes.length) // if you loaded the file, you must have all of it
         )
     }
+
+    def empty(fileInfo: FileInfo, file: File) = LocalP2PFile(fileInfo, file, mutable.BitSet(0 until fileInfo.numChunks:_*))
 }

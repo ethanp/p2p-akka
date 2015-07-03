@@ -4,11 +4,10 @@ import java.io.RandomAccessFile
 
 import akka.actor._
 import akka.event.LoggingReceive
-import ethanp.file.{Sha2, LocalP2PFile}
 import ethanp.file.LocalP2PFile._
+import ethanp.file.{LocalP2PFile, Sha2}
 
 import scala.concurrent.duration._
-import scala.util.Try
 
 /**
  * Ethan Petuchowski
@@ -38,7 +37,7 @@ class ChunkDownloader(p2PFile: LocalP2PFile, chunkIdx: Int, peerRef: ActorRef) e
             true
         }
         else {
-            log.error(s"rcvd chunk for $this didn't hash correctly")
+            log error s"$this rcvd chunk that didn't hash correctly"
             false
         }
     }
@@ -49,7 +48,7 @@ class ChunkDownloader(p2PFile: LocalP2PFile, chunkIdx: Int, peerRef: ActorRef) e
          *      after inactivity periods). Pass in `Duration.Undefined` to switch off this feature.
          * In another word, I guess I don't need to set another timeout after every message.
          */
-        context.setReceiveTimeout(15.second)
+        context.setReceiveTimeout(15.seconds)
         peerRef ! ChunkRequest(p2PFile.fileInfo.abbreviation, chunkIdx)
     }
 
