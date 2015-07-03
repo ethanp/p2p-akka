@@ -8,6 +8,7 @@ import ethanp.file.{Sha2, LocalP2PFile}
 import ethanp.file.LocalP2PFile._
 
 import scala.concurrent.duration._
+import scala.util.Try
 
 /**
  * Ethan Petuchowski
@@ -18,23 +19,27 @@ class ChunkDownloader(p2PFile: LocalP2PFile, chunkIdx: Int, peerRef: ActorRef) e
     val piecesRcvd = new Array[Boolean](p2PFile.fileInfo numPiecesInChunk chunkIdx)
     val chunkData = new Array[Byte](p2PFile.fileInfo numBytesInChunk chunkIdx)
 
-    /* an IOException here will crash the program. I don't really have any better ideas...retry? */
-    def writeChunk() = {
+    /* an IOException here will crash the program. I don't really have any better ideas...retry?
+     * I'll address it if it comes up
+     */
+    def writeChunk(): Boolean = {
         if (Sha2.hashOf(chunkData) == p2PFile.fileInfo.chunkHashes(chunkIdx)) {
             log.warning(s"writing out all ${chunkData.length} bytes of chunk $chunkIdx")
             /* use rwd or rws to write synchronously. until I have (hard to debug) issues, I'm going
-         * with writing asynchronously */
+             * with writing asynchronously */
+            // this is probably my own file descriptor, so other threads can't seek me somewhere else
+            // before I write out the data
             val out = new RandomAccessFile(p2PFile.file, "rw")
             // Setting offset beyond end of file does not change file length.
             // File length changes by writing after offset beyond end of file.
             out.seek(chunkIdx * BYTES_PER_CHUNK)
             out.write(chunkData)
             out.close()
-            chunkXferSuccess
+            true
         }
         else {
             log.error(s"rcvd chunk for $this didn't hash correctly")
-            chunkXferFailed
+            false
         }
     }
 
@@ -52,18 +57,24 @@ class ChunkDownloader(p2PFile: LocalP2PFile, chunkIdx: Int, peerRef: ActorRef) e
         context.parent ! msg
         self ! PoisonPill
     }
-    def chunkXferSuccess = notifyParent(ChunkComplete(chunkIdx))
-    def chunkXferFailed = notifyParent(ChunkDLFailed(chunkIdx, peerRef))
+    def chunkXferSuccess() = notifyParent(ChunkComplete(chunkIdx))
+    def chunkXferFailed() = notifyParent(ChunkDLFailed(chunkIdx, peerRef))
 
     override def receive: Actor.Receive = LoggingReceive {
         case Piece(data, idx) =>
             context.parent ! DownloadSpeed(data.length)
+
             piecesRcvd(idx) = true
             for ((b, i) ← data.zipWithIndex) {
-                val byteIdx = idx * BYTES_PER_PIECE + i
-                chunkData(byteIdx) = b
+                chunkData(idx*BYTES_PER_PIECE + i) = b
             }
-        case ReceiveTimeout => chunkXferFailed
-        case ChunkSuccess => writeChunk()
+
+        // enabled via context.setReceiveTimeout above
+        case ReceiveTimeout => chunkXferFailed()
+
+        case ChunkSuccess =>
+            val success = writeChunk()
+            if (success) chunkXferSuccess()
+            else chunkXferFailed()
     }
 }

@@ -5,7 +5,7 @@ import java.io.File
 import akka.actor.{ActorRef, Props}
 import akka.testkit.TestActorRef
 import ethanp.file.FileToDownload
-import ethanp.firstVersion.{Leeching, Seeding, Ping, FileDownloader}
+import ethanp.firstVersion._
 import ethanp.integration.BaseTester.ForwardingActor
 
 import scala.collection.immutable
@@ -32,12 +32,14 @@ class FileDownloaderTests extends BaseTester {
             "2 seeders and 3 leechers are down" when {
                 val (liveSeeders, deadSeeders) = splitAtIndex(seeders, 3)
                 val (liveLeechers, deadLeechers) = splitAtIndex(leechers, 2)
+                val livePeers = liveSeeders++liveLeechers
+                val deadPeers = deadSeeders++deadLeechers
                 val dlDir = new File("test_downloads")
                 dlDir.deleteOnExit()
 
-                val fileInfo = inputTextP2P.fileInfo
+                import inputTextP2P.fileInfo
                 val ftd = FileToDownload(fileInfo, seeders, leechers)
-                val fDlRef = TestActorRef(Props(classOf[FileDownloader], ftd, dlDir))
+                val fDlRef = TestActorRef(Props(classOf[FileDownloader], ftd, dlDir), self, "fdl")
                 val fDlPtr: FileDownloader = fDlRef.underlyingActor
                 "first starting up" should {
                     "check which peers are alive" in {
@@ -65,7 +67,24 @@ class FileDownloaderTests extends BaseTester {
                         }
                     }
                     "leave aside peers who don't respond" in {
-                        fDlPtr.nonResponsiveDownloadees should have size 5
+                        fDlPtr.nonResponsiveDownloadees.size shouldEqual deadPeers.size
+                    }
+
+                    "spawn the first three chunk downloaders" in {
+                        val numConcurrentDLs = Seq(fDlPtr.maxConcurrentChunks, livePeers.size).min
+                        fDlPtr.chunkDownloaders should have size numConcurrentDLs
+                    }
+                }
+
+                "completing download" should {
+                    "check off chunks as they arrive and inform `parent` of download success" in {
+                        for (i <- 0 until fileInfo.numChunks) {
+                            fDlRef ! ChunkComplete(i)
+                        }
+                        quickly {
+                            expectMsgAllClassOf(classOf[ChunkRequest], classOf[ChunkRequest], classOf[ChunkRequest])
+                            expectMsg(DownloadSuccess(fileInfo.filename))
+                        }
                     }
                 }
             }

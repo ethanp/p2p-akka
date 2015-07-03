@@ -99,8 +99,9 @@ class Client extends Actor with ActorLogging {
                         }
                     }
                     if (done && hasntFailed) {
-                        sender ! ChunkSuccess
+                        sender ! ChunkSuccess // is this useful for anything?
                     }
+                    // failure is silent (good idear?)
                 }
                 catch {
                     case e: Throwable =>

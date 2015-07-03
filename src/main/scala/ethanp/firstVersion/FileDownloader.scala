@@ -21,7 +21,9 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
     }
 
     // this is "shared-nothing", so I don't think local vars need to be `private`?
-    val p2PFile = LocalP2PFile(fileDLing.fileInfo, localFile, unavbl = mutable.BitSet(0 to numChunks:_*))
+    val p2PFile = LocalP2PFile(fileDLing.fileInfo, localFile, unavbl = mutable.BitSet(0 until numChunks:_*))
+
+    var maxConcurrentChunks = 3
 
     /** peers we've timed-out upon recently */
     var quarantine = Set.empty[ActorRef]
@@ -73,28 +75,32 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
     val chunkDownloaders = mutable.Set.empty[ActorRef]
 
 
-    val incompleteChunks = mutable.BitSet(1 to numChunks:_*) // starts out as all ones
-    val notStartedChunks = mutable.BitSet(1 to numChunks:_*)
+    val incompleteChunks = mutable.BitSet(0 until numChunks:_*) // starts out as all ones
+    val notStartedChunks = mutable.BitSet(0 until numChunks:_*)
 
-    def addChunkDownload(): Unit = {
+    def maybeStartChunkDownload(): Unit = {
+
         // kick-off an unstarted chunk
         if (notStartedChunks.nonEmpty) {
+            if (chunkDownloaders.size >= maxConcurrentChunks) return
             val nextIdx = notStartedChunks.head
             notStartedChunks.remove(nextIdx)
             downloadChunkFrom(nextIdx, nextToDLFrom(nextIdx))
         }
         else if (incompleteChunks.nonEmpty) {
-            log.info("just waiting on transfers to complete")
+            log info s"all chunks started, waiting on ${incompleteChunks.size} transfers to complete"
         } else {
-            speedometer.cancel() // may be unecessary since I'm poisoning myself anyway
-            log.warning(s"transfer of $filename complete!")
+            speedometer.cancel() // may be unnecessary since I'm poisoning myself anyway
+            log warning s"transfer of $filename complete!"
             context.parent ! DownloadSuccess(filename)
             self ! PoisonPill
         }
     }
 
     // TODO haha this is a terrible algorithm.
-    def nextToDLFrom(nextIdx: Int): ActorRef = liveSeeders.head
+    def nextToDLFrom(nextIdx: Int): ActorRef =
+        if (liveSeeders.nonEmpty) liveSeeders.head
+        else liveLeechers.head._1
 
     def downloadChunkFrom(chunkIdx: Int, peerRef: ActorRef): Unit = {
         chunkDownloaders += context.actorOf(
@@ -119,7 +125,7 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
     override def receive: Actor.Receive = LoggingReceive {
         case ChunkComplete(idx) =>
             incompleteChunks.remove(idx)
-            addChunkDownload()
+            maybeStartChunkDownload()
 
         // this is received *after* the ChunkDownloader tried retrying a few times
         case ChunkDLFailed(idx, peerRef) =>
@@ -133,7 +139,13 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
         // this comes from this node's Client actor who wants to know how much of the file is still incomplete
         case Ping(abbrev) => if (abbrev == abbreviation) sender ! incompleteChunks.toImmutable
 
-        case Seeding => liveSeeders += sender
-        case Leeching(unavbty) => liveLeechers += sender -> unavbty
+
+        case Seeding =>
+            liveSeeders += sender
+            maybeStartChunkDownload()
+
+        case Leeching(unavbty) =>
+            liveLeechers += sender -> unavbty
+            maybeStartChunkDownload()
     }
 }
