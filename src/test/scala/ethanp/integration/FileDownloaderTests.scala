@@ -7,6 +7,7 @@ import akka.testkit.TestActorRef
 import ethanp.file.FileToDownload
 import ethanp.firstVersion._
 import ethanp.integration.BaseTester.ForwardingActor
+import org.scalatest.Suites
 
 import scala.collection.mutable
 
@@ -14,16 +15,23 @@ import scala.collection.mutable
  * Ethan Petuchowski
  * 6/14/15
  */
+
+/* TODO there must be a better way to run all the tests in here */
+class FileDownloaderTests extends Suites(
+  new FileDownloaderTestLiveAndDeadSeedersAndLeechers,
+  new FileDownloaderTestJustEnoughLeechers,
+  new FileDownloaderTestNotFullyAvailable
+)
+
 class FileDownloaderTestLiveAndDeadSeedersAndLeechers extends BaseTester {
 
-    /* TODO keep tests at a higher level
+    /* TODO keep tests at a high level
      * to make refactoring simpler */
 
     import inputTextP2P.fileInfo
 
     "there are live & dead seeders & leechers" when {
-        val fwdActors = (1 to 10)
-        .map(i => system.actorOf(Props(classOf[ForwardingActor], self), "f-" + i)).toSet
+        val fwdActors = (1 to 10).map(i => system.actorOf(Props(classOf[ForwardingActor], self), "f-" + i)).toSet
         val (seeders, leechers) = splitAtIndex(fwdActors, 5)
         //            val ftd = FileToDownload(testTextP2P.fileInfo, seeders, leechers)
 
@@ -63,7 +71,8 @@ class FileDownloaderTestLiveAndDeadSeedersAndLeechers extends BaseTester {
                 // verify
                 unavbl = new mutable.BitSet(fileInfo.numChunks)
                 for ((leecher, idx) <- liveLeechers.zipWithIndex) {
-                    assert(fDlPtr.liveLeechers(leecher) == (unavbl += idx).toImmutable)
+                    unavbl += idx
+                    assert(fDlPtr.liveLeechers(leecher) == (fDlPtr.fullMutableBitSet &~ unavbl).toImmutable)
                 }
 
             }

@@ -21,7 +21,9 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
     }
 
     // this is "shared-nothing", so I don't think local vars need to be `private`?
-    val p2PFile = LocalP2PFile(fileDLing.fileInfo, localFile, unavbl = mutable.BitSet(0 until numChunks:_*))
+    val p2PFile = LocalP2PFile(fileDLing.fileInfo, localFile, unavbl = fullMutableBitSet)
+
+    def fullMutableBitSet: mutable.BitSet = mutable.BitSet(0 until numChunks: _*)
 
     var maxConcurrentChunks = 3
 
@@ -31,14 +33,17 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
     // will be updated periodically after new queries of the trackers
     var potentialDownloadees: Set[ActorRef] = fileDLing.seeders ++ fileDLing.leechers
 
-    def nonResponsiveDownloadees = potentialDownloadees -- liveSeeders -- liveLeechers.keySet
+    def nonResponsiveDownloadees = potentialDownloadees -- liveSeederRefs -- liveLeecherRefs
 
     // added to by responses from the peers when they get Ping'd
-    var liveSeeders = Set.empty[ActorRef]
-    var liveLeechers = Map.empty[ActorRef, BitSet]
+    var liveSeeders = Set.empty[Seeder]
+    var liveLeechers = Set.empty[Leecher]
+
+    def liveSeederRefs = liveSeeders map (_.ref)
+    def liveLeecherRefs = liveLeechers map (_.ref)
 
     /** They're ordered by how desirable they are to download from */
-    sealed abstract class FilePeer(val actorRef: ActorRef) extends Ordered[FilePeer] {
+    sealed abstract class FilePeer(val ref: ActorRef) extends Ordered[FilePeer] {
         val UNKNOWN = -1
         var histSpeedBytesSec: Int = UNKNOWN
         var ongoingChunkTransfers = List.empty[ChunkDownloader]
@@ -63,29 +68,44 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
         }
     }
 
-    class Seeder(actorRef: ActorRef) extends FilePeer(actorRef) {
+    case class Seeder(actorRef: ActorRef) extends FilePeer(actorRef) {
         override def hasChunk(idx: Int): Boolean = true
     }
 
-    class Leecher(actorRef: ActorRef) extends FilePeer(actorRef) {
-        val avblChunks = new mutable.BitSet(numChunks) // starts out as all zeros
-        override def hasChunk(idx: Int): Boolean = avblChunks.contains(idx)
+    case class Leecher(actorRef: ActorRef, val avbl: mutable.BitSet) extends FilePeer(actorRef) {
+        override def hasChunk(idx: Int) = avbl contains idx
     }
 
     val chunkDownloaders = mutable.Set.empty[ActorRef]
 
+    val incompleteChunks = fullMutableBitSet // starts out as all ones
+    val notStartedChunks = fullMutableBitSet
 
-    val incompleteChunks = mutable.BitSet(0 until numChunks:_*) // starts out as all ones
-    val notStartedChunks = mutable.BitSet(0 until numChunks:_*)
+    /**
+     * @return BitSet containing "1"s for chunks that other peers are known to have
+     */
+    def availableChunks: BitSet = {
+        val allAvbl = fullMutableBitSet.toImmutable
+        if (liveSeeders.nonEmpty) allAvbl
+        else (liveLeechers foldLeft allAvbl)(_ & _.avbl)  // I think I've found a monad
+    }
 
     def maybeStartChunkDownload(): Unit = {
 
         // kick-off an unstarted chunk
         if (notStartedChunks.nonEmpty) {
             if (chunkDownloaders.size >= maxConcurrentChunks) return
-            val nextIdx = notStartedChunks.head
-            notStartedChunks.remove(nextIdx)
-            downloadChunkFrom(nextIdx, nextToDLFrom(nextIdx))
+            (notStartedChunks & availableChunks).headOption match {
+                case Some(nextIdx) =>
+                    notStartedChunks.remove(nextIdx)
+                    downloadChunkFrom(nextIdx, nextToDLFrom(nextIdx))
+                case None =>
+                    // TODO I need to wait for an event published on the bus that a chunk has
+                    // been downloaded and ask trackers for new people, and ping the dead people
+                    // again periodically to see if they've woken up
+                    log warning "none of the chunks remaining are available :("
+            }
+
         }
         else if (incompleteChunks.nonEmpty) {
             log info s"all chunks started, waiting on ${incompleteChunks.size} transfers to complete"
@@ -97,13 +117,11 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
         }
     }
 
-    // TODO haha this is a terrible algorithm.
+    // TODO haha this is a terrible algorithm, I think it does work though
+    // I guess I was going to take the priority scores (which Seeders & Leechers have) into account
     def nextToDLFrom(nextIdx: Int): ActorRef = {
-
-        // TODO we have to find someone who HAS the appropriate idx
-
-        if (liveSeeders.nonEmpty) liveSeeders.head
-        else if (liveLeechers.nonEmpty) liveLeechers.head._1
+        if (liveSeeders.nonEmpty) liveSeeders.head.ref
+        else if (liveLeechers.nonEmpty) liveLeechers.find(_ hasChunk nextIdx).get.ref
         else throw new RuntimeException("no one to dl from")
     }
 
@@ -115,9 +133,7 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
     }
 
     /** called by Akka framework when this Actor is asynchronously started */
-    override def preStart(): Unit = {
-        potentialDownloadees.foreach(_ ! Ping(abbreviation))
-    }
+    override def preStart(): Unit = potentialDownloadees.foreach(_ ! Ping(abbreviation))
 
     /* speed calculations */
     var bytesDLedPastSecond = 0
@@ -133,21 +149,17 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
 
         // this is received *after* the ChunkDownloader tried retrying a few times
         case ChunkDLFailed(idx, peerRef) =>
-            liveSeeders -= peerRef
-
             // TODO update the FilePeer object
+            // TODO then try again
 
-            if (liveSeeders.nonEmpty) downloadChunkFrom(idx, nextToDLFrom(idx))
-            else log.warning(s"$filename seederList is empty")
-
-        case DownloadSpeed(numBytes) => bytesDLedPastSecond += numBytes // should be child-actor
+        // comes from ChunkDownloader
+        case DownloadSpeed(numBytes) => bytesDLedPastSecond += numBytes
 
         // this comes from this node's Client actor who wants to know how much of the file is still incomplete
         case Ping(abbrev) => if (abbrev == abbreviation) sender ! incompleteChunks.toImmutable
 
-
         case Seeding =>
-            liveSeeders += sender
+            liveSeeders += Seeder(sender())
             maybeStartChunkDownload()
 
         case Leeching(unavblty) =>
@@ -158,7 +170,7 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
                This would be a "push" model, though of course we could also use a "pull" model...
                 I think that might be more difficult to implement but also more efficient
              */
-            liveLeechers += sender -> unavblty
+            liveLeechers += Leecher(sender(), fullMutableBitSet &~ unavblty)
             maybeStartChunkDownload()
     }
 }
