@@ -31,3 +31,4 @@ case class DownloadSuccess(filename: String)
 case class Ping(infoAbbrev: Sha2)
 case object Seeding
 case class Leeching(unavblty: BitSet)
+case class ReplyTo(requester: ActorRef, chunkIdx: Int)

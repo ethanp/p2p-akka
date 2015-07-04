@@ -9,9 +9,8 @@ import ethanp.file.{FileInfo, FileToDownload, LocalP2PFile, Sha2}
 
 import scala.collection.immutable.BitSet
 import scala.collection.mutable
-import scala.language.postfixOps
-import scala.util.{Failure, Success}
 import scala.concurrent.duration._
+import scala.language.postfixOps
 
 /**
  * Ethan Petuchowski
@@ -76,44 +75,19 @@ class Client extends Actor with ActorLogging {
             currentDownloads += m.fileInfo -> context.actorOf(
                 Props(classOf[FileDownloader], m, downloadDir), name=s"file-${m.fileInfo.filename}")
 
-        /* at this time, handling ChunkRequests is a *blocking* maneuver for a client */
+        /* at this time, handling ChunkRequests is a *non-blocking* maneuver for a client */
         case ChunkRequest(infoAbbrev, chunkIdx) =>
+            /* Note: Akka guarantees FIFO order (only!) between creating a child and sending it messages
+
+              As it stands, the ChunkDownloader doesn't care who sends it Pieces.
+                However, it DOES rely on the fact that the Piece sender is also the ChunkSuccess sender,
+                  but that will still be the case with this change.
+              */
             if (localAbbrevs contains infoAbbrev) {
                 val p2PFile = localFiles(localAbbrevs(infoAbbrev))
-                // no idear how best to handle failures here...
-                try {
-                    var pieceIdx = 0
-                    val piecesThisChunk = p2PFile.fileInfo.numPiecesInChunk(chunkIdx)
-                    var hasntFailed = true
-                    def done: Boolean = pieceIdx == piecesThisChunk
-                    while (!done && hasntFailed) {
-                        p2PFile.getPiece(chunkIdx, pieceIdx) match {
-                            case Success(arr) =>
-                                // doesn't need to pass fileInfo bc it's being sent to
-                                // particular ChunkDownloader
-                                sender ! Piece(arr, pieceIdx)
-                                pieceIdx += 1
-                            case Failure(e) =>
-                                log.error("request failed with "+e.getClass)
-                                hasntFailed = false
-                        }
-                    }
-                    if (done && hasntFailed) {
-                        sender ! ChunkSuccess // is this useful for anything?
-                    }
-                    // failure is silent (good idear?)
-                }
-                catch {
-                    case e: Throwable =>
-                        log.error(e.toString)
-                        log.error(s"couldn't read file ${p2PFile.fileInfo.filename}")
-                        log.error("ignoring client request")
-                        // don't exit or anything. just keep trucking.
-                }
+                context.actorOf(Props(classOf[ChunkReplyer], p2PFile)) ! ReplyTo(sender(), chunkIdx)
             }
-            else {
-                sender ! PeerSideError("file with that hash not known")
-            }
+            else sender ! PeerSideError("file with that hash not known")
 
         case m @ SuccessfullyAdded(filename) => testerActor.foreach(_ ! m)
         case m @ DownloadSuccess(filename) => testerActor.foreach(_ ! m)

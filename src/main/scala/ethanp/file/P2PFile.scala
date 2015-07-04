@@ -124,14 +124,14 @@ object LocalP2PFile {
             offset = 0
         }
 
-        def updateWithArr(arr: Array[Byte]): Unit = chunkHashes += Sha2.hashOf(arr)
+        def updateWithArr(arr: Array[Byte]): Unit = chunkHashes += (Sha2 hashOf arr)
 
         def readFile(fis: InputStream) {
             while (!doneReading) {
                 bytesRead = fis.read(readArr, offset, readArr.length - offset)
                 totalRead += bytesRead
                 if (filledReadArray) updateHash()
-                else if (doneReading) updateWithArr(readArr.take(offset+bytesRead))
+                else if (doneReading) updateWithArr(readArr take offset + bytesRead)
                 else offset += bytesRead
             }
         }
