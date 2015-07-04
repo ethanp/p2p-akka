@@ -61,14 +61,10 @@ class Client extends Actor with ActorLogging {
         case TrackerSideError(errMsg) =>
             log.error(s"ERROR from tracker ${sender()}: $errMsg")
 
-        case m @ DownloadFileFrom(tracker, filename) =>
+        case DownloadFileFrom(tracker, filename) =>
             testerActor = Some(sender())
-            if (!(knownTrackers contains tracker)) {
-                sender ! ClientError("I don't know that tracker")
-            }
-            else {
-                tracker ! DownloadFile(filename)
-            }
+            if (knownTrackers contains tracker) tracker ! DownloadFile(filename)
+            else sender ! ClientError("I don't know that tracker")
 
         case m : FileToDownload =>
             // pass args to actor constructor (runtime IllegalArgumentException if you mess it up!)
@@ -105,7 +101,7 @@ class Client extends Actor with ActorLogging {
                 // I'm still downloading that file, so query DLer
                 // for completion bitset and pass it to peer
                 case Some(fileDLer) =>
-                    val sen = sender() // must store ref for use in async closure!
+                    val sen = sender() // must store ref for use in async closure?
                     val dlerBitSet = (fileDLer ? Ping(abbrev)).mapTo[BitSet]
                     dlerBitSet onSuccess { case b => sen ! Leeching(b) }
             }

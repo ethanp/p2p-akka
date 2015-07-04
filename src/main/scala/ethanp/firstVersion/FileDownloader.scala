@@ -98,9 +98,14 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
     }
 
     // TODO haha this is a terrible algorithm.
-    def nextToDLFrom(nextIdx: Int): ActorRef =
+    def nextToDLFrom(nextIdx: Int): ActorRef = {
+
+        // TODO we have to find someone who HAS the appropriate idx
+
         if (liveSeeders.nonEmpty) liveSeeders.head
-        else liveLeechers.head._1
+        else if (liveLeechers.nonEmpty) liveLeechers.head._1
+        else throw new RuntimeException("no one to dl from")
+    }
 
     def downloadChunkFrom(chunkIdx: Int, peerRef: ActorRef): Unit = {
         chunkDownloaders += context.actorOf(
@@ -117,8 +122,6 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
     /* speed calculations */
     var bytesDLedPastSecond = 0
     val speedometer = context.system.scheduler.schedule(1 second, 1 second) {
-        // TODO this throws a null pointer exception (??!)
-//        log.warning(f"current DL speed for $filename: ${bytesDLedPastSecond.toDouble / 1000}%.2f")
         bytesDLedPastSecond = 0
     }
 
@@ -126,11 +129,14 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
         case ChunkComplete(idx) =>
             incompleteChunks.remove(idx)
             maybeStartChunkDownload()
+            // TODO publish completion to EventBus
 
         // this is received *after* the ChunkDownloader tried retrying a few times
         case ChunkDLFailed(idx, peerRef) =>
             liveSeeders -= peerRef
+
             // TODO update the FilePeer object
+
             if (liveSeeders.nonEmpty) downloadChunkFrom(idx, nextToDLFrom(idx))
             else log.warning(s"$filename seederList is empty")
 
@@ -144,8 +150,15 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
             liveSeeders += sender
             maybeStartChunkDownload()
 
-        case Leeching(unavbty) =>
-            liveLeechers += sender -> unavbty
+        case Leeching(unavblty) =>
+            /* TODO use the event bus to subscribe to leecher's avblty update stream
+                val bus = ActorEventBus()       // or however you do it
+                bus.subscribe(this, sender())   // or however you do it
+
+               This would be a "push" model, though of course we could also use a "pull" model...
+                I think that might be more difficult to implement but also more efficient
+             */
+            liveLeechers += sender -> unavblty
             maybeStartChunkDownload()
     }
 }

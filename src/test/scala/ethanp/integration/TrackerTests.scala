@@ -12,6 +12,7 @@ import scala.language.postfixOps
  */
 class TrackerTests extends BaseTester {
 
+    // using ScalaTest's "must" would be semantically equivalent
     "A Tracker" should {
         val trackerRef = TestActorRef[Tracker]
         val tracker = trackerRef.underlyingActor
