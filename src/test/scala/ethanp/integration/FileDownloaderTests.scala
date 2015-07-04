@@ -57,22 +57,22 @@ class FileDownloaderTestLiveAndDeadSeedersAndLeechers extends BaseTester {
         "getting chunk availabilities" should {
             "believe seeders are seeders" in {
                 liveSeeders.foreach(fDlRef.tell(Seeding, _))
-                assert(liveSeeders forall fDlPtr.liveSeeders.contains)
+                assert(fDlPtr.liveSeederRefs forall liveSeeders.contains)
             }
             "know avbl of leechers" in {
                 // test file has "3" chunks
 
                 // set up
-                var unavbl = new mutable.BitSet(fileInfo.numChunks)
+                var avbl = new mutable.BitSet(fileInfo.numChunks)
                 for ((leecher, idx) <- liveLeechers.zipWithIndex) {
-                    fDlRef.tell(Leeching((unavbl += idx).toImmutable), leecher)
+                    fDlRef.tell(Leeching((avbl += idx).toImmutable), leecher)
                 }
 
                 // verify
-                unavbl = new mutable.BitSet(fileInfo.numChunks)
+                avbl = new mutable.BitSet(fileInfo.numChunks)
                 for ((leecher, idx) <- liveLeechers.zipWithIndex) {
-                    unavbl += idx
-                    assert(fDlPtr.liveLeechers(leecher) == (fDlPtr.fullMutableBitSet &~ unavbl).toImmutable)
+                    avbl += idx
+                    fDlPtr.liveLeechers should contain (Leecher(leecher, avbl))
                 }
 
             }
@@ -130,19 +130,16 @@ class FileDownloaderTestJustEnoughLeechers extends BaseTester {
                     // test file has "3" chunks
 
                     // set up
-                    var unavbl = new mutable.BitSet(fileInfo.numChunks)
+                    var avbl = new mutable.BitSet(fileInfo.numChunks)
+                    var expectedLeechers = List.empty[Leecher]
                     for ((leecher, idx) <- leechers.zipWithIndex) {
-                        if (idx > 0) unavbl -= idx-1
-                        fDlRef.tell(Leeching((unavbl += idx).toImmutable), leecher)
+                        if (idx > 0) avbl -= idx-1
+                        fDlRef.tell(Leeching((avbl += idx).toImmutable), leecher)
+                        expectedLeechers ::= Leecher(leecher, avbl)
                     }
 
-                    // verify
-                    unavbl = new mutable.BitSet(fileInfo.numChunks)
-                    for ((leecher, idx) <- leechers.zipWithIndex) {
-                        if (idx > 0) unavbl -= idx-1
-                        assert(fDlPtr.liveLeechers(leecher) == (unavbl += idx).toImmutable)
-                    }
-
+                    // trust, but verify
+                    fDlPtr.liveLeechers shouldEqual expectedLeechers
                 }
 
                 // TODO I need to make sure the requests are going to the node that has those chunks
@@ -199,17 +196,17 @@ class FileDownloaderTestNotFullyAvailable extends BaseTester {
                     // test file has "3" chunks
 
                     // set up
-                    var unavbl = new mutable.BitSet(fileInfo.numChunks)
+                    var avbl = new mutable.BitSet(fileInfo.numChunks)
                     for ((leecher, idx) <- leechers.zipWithIndex) {
-                        if (idx > 0) unavbl -= idx-1
-                        fDlRef.tell(Leeching((unavbl += idx).toImmutable), leecher)
+                        if (idx > 0) avbl -= idx-1
+                        fDlRef.tell(Leeching((avbl += idx).toImmutable), leecher)
                     }
 
                     // verify
-                    unavbl = new mutable.BitSet(fileInfo.numChunks)
+                    avbl = new mutable.BitSet(fileInfo.numChunks)
                     for ((leecher, idx) <- leechers.zipWithIndex) {
-                        if (idx > 0) unavbl -= idx-1
-                        assert(fDlPtr.liveLeechers(leecher) == (unavbl += idx).toImmutable)
+                        if (idx > 0) avbl -= idx-1
+                        fDlPtr.liveLeechers should contain (Leecher(leecher, avbl += idx))
                     }
 
                 }
