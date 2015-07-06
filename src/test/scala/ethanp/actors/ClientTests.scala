@@ -1,4 +1,4 @@
-package ethanp.integration
+package ethanp.actors
 
 import akka.testkit.TestActorRef
 import ethanp.firstVersion._

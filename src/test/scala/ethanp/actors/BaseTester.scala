@@ -1,11 +1,10 @@
-package ethanp.integration
+package ethanp.actors
 
 import akka.actor._
 import akka.testkit.{ImplicitSender, TestKit}
 import com.typesafe.config.ConfigFactory
+import ethanp.actors.BaseTester.ForwardingActor
 import ethanp.file.LocalP2PFile
-import ethanp.firstVersion.ChunkRequest
-import ethanp.integration.BaseTester.ForwardingActor
 import org.scalatest.{BeforeAndAfterAll, Inside, Matchers, WordSpecLike}
 
 import scala.concurrent.duration._

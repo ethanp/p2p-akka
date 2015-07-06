@@ -30,10 +30,15 @@ class Tracker extends Actor with ActorLogging {
         case m: ListTracker => sender ! TrackerKnowledge(knowledgeOf.values.toList)
 
         case InformTrackerIHave(info) =>
+
             val desiredFilename = info.filename
-            if (knowledgeOf contains desiredFilename) {
-                if (knowledgeOf(desiredFilename).fileInfo != info) {
-                    sender ! TrackerSideError(s"different file named $desiredFilename already tracked")
+            def hashMatches = knowledgeOf(desiredFilename).fileInfo == info
+            def alreadyKnown = knowledgeOf contains desiredFilename
+            def replyDifferentFileExists() = sender ! TrackerSideError(s"different file named $desiredFilename already tracked")
+
+            if (alreadyKnown) {
+                if (!hashMatches) {
+                    replyDifferentFileExists
                 }
                 else {
                     val swarm = knowledgeOf(desiredFilename)

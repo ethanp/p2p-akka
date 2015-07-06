@@ -1,4 +1,4 @@
-package ethanp.integration
+package ethanp.actors
 
 import java.io.File
 
@@ -6,7 +6,7 @@ import akka.actor.Props
 import akka.testkit.TestActorRef
 import ethanp.file.FileToDownload
 import ethanp.firstVersion._
-import ethanp.integration.BaseTester.ForwardingActor
+import ethanp.actors.BaseTester.ForwardingActor
 import org.scalatest.Suites
 
 import scala.concurrent.duration._
@@ -224,14 +224,11 @@ class FileDownloaderTestNotFullyAvailable extends BaseTester {
                     }
                 }
             }
-
             "continuing download" should {
-
                 // we get everything we expect to receive from peers
                 for (i <- 0 until fileInfo.numChunks-1) {
                     fDlRef ! ChunkComplete(i)
                 }
-
                 "eventually start receiving 'NothingDoing' status from FDLr" in {
                     for (i <- 1 to 2) {
                         within(fDlPtr.progressTimeout - 1.second) {
