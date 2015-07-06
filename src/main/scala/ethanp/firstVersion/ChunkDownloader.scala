@@ -15,8 +15,16 @@ import scala.concurrent.duration._
  */
 class ChunkDownloader(p2PFile: LocalP2PFile, chunkIdx: Int, peerRef: ActorRef) extends Actor with ActorLogging {
 
+    /* CONFIGURATION */
+
+    var receiveTimeout = 15.seconds
+
+
+    /* FIELDS */
+
     val piecesRcvd = new Array[Boolean](p2PFile.fileInfo numPiecesInChunk chunkIdx)
     val chunkData = new Array[Byte](p2PFile.fileInfo numBytesInChunk chunkIdx)
+
 
     /* an IOException here will crash the program. I don't really have any better ideas...retry?
      * I'll address it if it comes up
@@ -48,7 +56,7 @@ class ChunkDownloader(p2PFile: LocalP2PFile, chunkIdx: Int, peerRef: ActorRef) e
          *      after inactivity periods). Pass in `Duration.Undefined` to switch off this feature.
          * In another word, I guess I don't need to set another timeout after every message.
          */
-        context.setReceiveTimeout(15.seconds)
+        context.setReceiveTimeout(receiveTimeout)
         peerRef ! ChunkRequest(p2PFile.fileInfo.abbreviation, chunkIdx)
     }
 

@@ -9,7 +9,9 @@ import ethanp.firstVersion._
 import ethanp.integration.BaseTester.ForwardingActor
 import org.scalatest.Suites
 
-import scala.collection.mutable
+import scala.concurrent.duration._
+import scala.collection.{BitSet, mutable}
+import scala.language.postfixOps
 
 /**
  * Ethan Petuchowski
@@ -183,6 +185,9 @@ class FileDownloaderTestNotFullyAvailable extends BaseTester {
             val fDlRef = TestActorRef(Props(classOf[FileDownloader], ftd, dlDir), self, "fdl-3")
             val fDlPtr: FileDownloader = fDlRef.underlyingActor
 
+            // speed things up for testing purposes
+            fDlPtr.progressTimeout = 2 seconds
+
             "first starting up" should {
                 "check which peers are alive" in {
                     quickly {
@@ -207,10 +212,11 @@ class FileDownloaderTestNotFullyAvailable extends BaseTester {
                         if (idx > 0) avbl -= idx-1
                         fDlPtr.liveLeechers should contain (Leecher(leecher, avbl += idx))
                     }
-
+                    fDlPtr.availableChunks shouldEqual BitSet(0 until fileInfo.numChunks-1 :_*)
                 }
                 "spawn just the two chunk downloaders" in {
-                    fDlPtr.chunkDownloaders should have size 2
+                    val s = Seq(fileInfo.numChunks-1, fDlPtr.maxConcurrentChunks).min
+                    fDlPtr.chunkDownloaders should have size s
                     quickly {
                         for (i ← 1 to fileInfo.numChunks-1) {
                             expectMsgClass(classOf[ChunkRequest])
@@ -220,16 +226,22 @@ class FileDownloaderTestNotFullyAvailable extends BaseTester {
             }
 
             "continuing download" should {
-                "check off chunks as they arrive and inform `parent` of download success" in {
-                    for (i <- 0 until fileInfo.numChunks-1) {
-                        fDlRef ! ChunkComplete(i)
-                    }
 
-                    // TODO verify the thing knows what it has and also what it hasn't started
+                // we get everything we expect to receive from peers
+                for (i <- 0 until fileInfo.numChunks-1) {
+                    fDlRef ! ChunkComplete(i)
                 }
 
-                "eventually timeout" ignore {
-                    // TODO expect timeout within 10 seconds or something (not implemented)
+                "eventually start receiving 'NothingDoing' status from FDLr" in {
+                    for (i <- 1 to 2) {
+                        within(fDlPtr.progressTimeout - 1.second) {
+                            expectNoMsg()
+                        }
+                        within(2 seconds) {
+                            expectMsg(NoProgress)
+                        }
+                    }
+                    assert(true)
                 }
             }
         }

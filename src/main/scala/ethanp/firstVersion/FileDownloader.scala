@@ -30,10 +30,11 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
         context.stop(self) // instantaneous self-immolation
     }
 
+
     /* UTILITY METHODS */
 
     def fullMutableBitSet = mutable.BitSet(0 until numChunks: _*)
-    def emptyMutableBitSet = mutable.BitSet(numChunks)
+    def emptyMutableBitSet = new mutable.BitSet(numChunks)
     def nonResponsiveDownloadees = potentialDownloadees -- liveSeederRefs -- liveLeecherRefs
     def liveSeederRefs = liveSeeders map (_.ref)
     def liveLeecherRefs = liveLeechers map (_.ref)
@@ -57,12 +58,14 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
         )
     }
 
+
     /* CONFIGURATION */
 
     var maxConcurrentChunks = 3
+    var progressTimeout = 10 seconds
 
     /** called by Akka framework when this Actor is asynchronously started */
-    override def preStart(): Unit = potentialDownloadees.foreach(_ ! Ping(abbreviation))
+    override def preStart(): Unit = potentialDownloadees foreach (_ ! Ping(abbreviation))
 
     // TODO this should de-register me from all the event buses I'm subscribed to
     override def postStop(): Unit = () // this is what the default one already does
@@ -88,7 +91,6 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
     /** check-lists of what needs to be done */
     val incompleteChunks = fullMutableBitSet // starts out as all ones
     val notStartedChunks = fullMutableBitSet
-
 
     def attemptChunkDownload(): Unit = {
         // kick-off an unstarted chunk
@@ -129,10 +131,13 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
         bytesDLedPastSecond = 0
     }
 
-
     override def receive: Actor.Receive = LoggingReceive {
+
+        case ReceiveTimeout => context.parent ! NoProgress
+
         case ChunkComplete(idx) =>
             incompleteChunks.remove(idx)
+            context.setReceiveTimeout(progressTimeout)
             attemptChunkDownload()
             // TODO publish completion to EventBus
 
