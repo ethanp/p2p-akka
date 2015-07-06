@@ -1,9 +1,10 @@
 package ethanp.integration
 
-import akka.actor.{Actor, ActorRef, ActorSystem, Props}
+import akka.actor._
 import akka.testkit.{ImplicitSender, TestKit}
 import com.typesafe.config.ConfigFactory
 import ethanp.file.LocalP2PFile
+import ethanp.firstVersion.ChunkRequest
 import ethanp.integration.BaseTester.ForwardingActor
 import org.scalatest.{BeforeAndAfterAll, Inside, Matchers, WordSpecLike}
 
@@ -46,6 +47,7 @@ object BaseTester {
     }
                  """
 
+    case class OrigAddressee(m: Any, actorPath: ActorPath)
     /**
      * An Actor that forwards every message to a next Actor
      */

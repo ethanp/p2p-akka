@@ -135,14 +135,13 @@ class FileDownloaderTestJustEnoughLeechers extends BaseTester {
                     for ((leecher, idx) <- leechers.zipWithIndex) {
                         if (idx > 0) avbl -= idx-1
                         fDlRef.tell(Leeching((avbl += idx).toImmutable), leecher)
-                        expectedLeechers ::= Leecher(leecher, avbl)
+                        expectedLeechers ::= Leecher(leecher, fDlPtr.fullMutableBitSet & avbl)
                     }
 
                     // trust, but verify
-                    fDlPtr.liveLeechers shouldEqual expectedLeechers
+                    fDlPtr.liveLeechers shouldEqual expectedLeechers.toSet
                 }
 
-                // TODO I need to make sure the requests are going to the node that has those chunks
 
                 "spawn the first three chunk downloaders" in {
                     val numConcurrentDLs = Seq(fDlPtr.maxConcurrentChunks, leechers.size).min

@@ -32,7 +32,8 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
 
     /* UTILITY METHODS */
 
-    def fullMutableBitSet: mutable.BitSet = mutable.BitSet(0 until numChunks: _*)
+    def fullMutableBitSet = mutable.BitSet(0 until numChunks: _*)
+    def emptyMutableBitSet = mutable.BitSet(numChunks)
     def nonResponsiveDownloadees = potentialDownloadees -- liveSeederRefs -- liveLeecherRefs
     def liveSeederRefs = liveSeeders map (_.ref)
     def liveLeecherRefs = liveLeechers map (_.ref)
@@ -40,7 +41,7 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
     /** @return BitSet containing "1"s for chunks that other peers are known to have */
     def availableChunks: BitSet =
         if (liveSeeders.nonEmpty) fullMutableBitSet
-        else (liveLeechers foldLeft fullMutableBitSet)(_ & _.avbl)
+        else (liveLeechers foldLeft emptyMutableBitSet)(_|_.avbl)
 
     def randomPeerOwningChunk(idx: Int): FilePeer = {
         val validLeechers = liveLeechers filter (_ hasChunk idx)
@@ -93,7 +94,8 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
         // kick-off an unstarted chunk
         if (notStartedChunks.nonEmpty) {
             if (chunkDownloaders.size >= maxConcurrentChunks) return
-            (notStartedChunks & availableChunks).headOption match {
+            val chunks = availableChunks
+            (notStartedChunks & chunks).headOption match {
                 case Some(nextIdx) =>
                     notStartedChunks.remove(nextIdx)
                     val peer = nextToDLFrom(nextIdx)
@@ -159,7 +161,7 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
                This would be a "push" model, though of course we could also use a "pull" model...
                 I think that might be more difficult to implement but also more efficient
              */
-            liveLeechers += Leecher(sender(), fullMutableBitSet & avblty)
+            liveLeechers += Leecher(sender(), fullMutableBitSet & avblty) /* the & is to convert immutable -> mutable */
             attemptChunkDownload()
     }
 }
