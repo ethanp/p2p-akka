@@ -17,35 +17,31 @@ import scala.language.postfixOps
  * 6/4/15
  */
 class Client extends Actor with ActorLogging {
-    log.info(s"client $self starting up")
+
+    /* FIELDS */
 
     val localFiles = mutable.Map.empty[String, LocalP2PFile]
     val localAbbrevs = mutable.Map.empty[Sha2, String]
-
-    /* Note: actor refs CAN be sent to remote machine */
-    val knownTrackers = mutable.Set.empty[ActorRef]
-
+    val knownTrackers = mutable.Set.empty[ActorRef] // Note: actor refs CAN be sent to remote machine
     implicit val timeout: akka.util.Timeout = 2 seconds
-
     val downloadDir = new File("downloads")
     if (!downloadDir.exists()) downloadDir.mkdir()
+    var currentDownloads = Map.empty[FileInfo, ActorRef/*FileDownloaders*/]
+    var notificationListeners = Set.empty[ActorRef]
 
-    var mostRecentTrackerListing: List[FileToDownload] = _
-    var currentDownloads = Map.empty[FileInfo, ActorRef] // FileDownloaders
+
+    /* UTILITIES */
 
     def getDownloader(abbrev: Sha2): Option[ActorRef] = currentDownloads.find(_._1.abbreviation == abbrev).map(_._2)
 
-    // for remembering whom to reply to
-    var testerActor: Option[ActorRef] = None
+
+    /* RECEIVE */
 
     override def receive: Receive = LoggingReceive {
 
         case LoadFile(pathString, name) =>
-            testerActor = Some(sender())
-            log.info(s"loading $pathString")
-            val localFile = LocalP2PFile.loadFile(name, pathString)
-            localFiles(name) = localFile
-            localAbbrevs(localFile.fileInfo.abbreviation) = name
+            notificationListeners += sender
+            val localFile: LocalP2PFile = loadFile(pathString, name)
             log.info("sending to known trackers")
             knownTrackers.foreach(_ ! InformTrackerIHave(localFile.fileInfo))
 
@@ -54,7 +50,6 @@ class Client extends Actor with ActorLogging {
         case m @ ListTracker(ref) => ref ! m
 
         case TrackerKnowledge(files) =>
-            mostRecentTrackerListing = files
             log.info(s"tracker ${sender().path} knows of the following files")
             files.zipWithIndex foreach { case (f, i) => println(s"${i+1}: ${f.fileInfo.filename}") }
 
@@ -62,7 +57,7 @@ class Client extends Actor with ActorLogging {
             log.error(s"ERROR from tracker ${sender()}: $errMsg")
 
         case DownloadFileFrom(tracker, filename) =>
-            testerActor = Some(sender())
+            notificationListeners += sender
             if (knownTrackers contains tracker) tracker ! DownloadFile(filename)
             else sender ! ClientError("I don't know that tracker")
 
@@ -85,8 +80,8 @@ class Client extends Actor with ActorLogging {
             }
             else sender ! PeerSideError("file with that hash not known")
 
-        case m @ SuccessfullyAdded(filename) => testerActor.foreach(_ ! m)
-        case m @ DownloadSuccess(filename) => testerActor.foreach(_ ! m)
+        case m @ SuccessfullyAdded(filename) => notificationListeners.foreach(_ ! m)
+        case m @ DownloadSuccess(filename) => notificationListeners.foreach(_ ! m)
 
         case Ping(abbrev) =>
             import scala.concurrent.ExecutionContext.Implicits.global
@@ -105,6 +100,17 @@ class Client extends Actor with ActorLogging {
                     val dlerBitSet = (fileDLer ? Ping(abbrev)).mapTo[BitSet]
                     dlerBitSet onSuccess { case b => sen ! Leeching(b) }
             }
+    }
+
+
+    /* RECEIVE METHODS */
+
+    def loadFile(pathString: String, name: String): LocalP2PFile = {
+        log.info(s"loading $pathString")
+        val localFile = LocalP2PFile.loadFile(name, pathString)
+        localFiles(name) = localFile
+        localAbbrevs(localFile.fileInfo.abbreviation) = name
+        localFile
     }
 }
 

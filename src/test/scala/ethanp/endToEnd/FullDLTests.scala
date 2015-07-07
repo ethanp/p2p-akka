@@ -2,12 +2,15 @@ package ethanp.endToEnd
 
 import java.io.File
 
-import akka.actor.{ActorRef, ActorSystem, Props}
+import akka.actor.{ActorRef, Props}
 import akka.testkit.TestActorRef
 import ethanp.actors.BaseTester
+import ethanp.file.{FileToDownload, LocalP2PFile}
 import ethanp.firstVersion._
 
+import scala.concurrent.duration._
 import scala.io.Source._
+import scala.language.postfixOps
 
 /**
  * Created by Ethan Petuchowski on 7/6/15.
@@ -17,43 +20,38 @@ class DLTests extends BaseTester {
     def filesEqual(path1: String, path2: String): Boolean =
         fromFile(path1).mkString == fromFile(path2).mkString
 
-    def makeActors(num: Int, props: Props, name: String)(implicit sys: ActorSystem):
-    Vector[ActorRef] = (0 until num).map(i => sys.actorOf(props, s"$name-$i")).toVector
+    def makeActors(num: Int, props: Props, name: String): Vector[ActorRef] =
+        (0 until num).map(i => TestActorRef(props, s"$name-$i")).toVector
 
-    def makeClients(num: Int) = makeActors(num, Props[Client], "client")
-    def makeTrackers(num: Int) = makeActors(num, Props[Tracker], "tracker")
+    def makeClients(num: Int) = makeActors(num, Props[Client], "client").map(_.asInstanceOf[TestActorRef[Client]])
+    def makeTrackers(num: Int) = makeActors(num, Props[Tracker], "tracker").map(_.asInstanceOf[TestActorRef[Tracker]])
     val fromDir = "testfiles"
     val toDir = "downloads"
     def fromTo(filename: String) = s"$fromDir/$filename" -> s"$toDir/$filename"
 }
 class FullDLTests extends DLTests {
 
-    // TODO the goal here is to PROPERLY set thing up
-    // so that we're not configuring the state of the system with API calls
-    // we should instead be DIRECTLY setting the state
-
     "A downloaded file" should {
         "have the same contents" in {
-            val tracker = TestActorRef(Props[Tracker], "tracker-0")
-            val trkPtr: Tracker = tracker.underlyingActor
-            trkPtr.
             val clients = makeClients(3)
             val filename = "Test1.txt"
             val (from, to) = fromTo(filename)
+            val info = LocalP2PFile.loadFile(filename, from).fileInfo
             new File(to).delete()
 
-            // tell clients about tracker
-            clients foreach (_ ! TrackerLoc(tracker))
+            clients.tail foreach (_.underlyingActor.loadFile(from, filename))
+            Thread sleep 100 // let them load & hash the file
 
-            // 2 clients tell tracker they have the file
-            clients take 2 foreach (_ ! LoadFile(from, filename))
-            Thread sleep 100
+            clients.head.underlyingActor.notificationListeners += self
 
             // remaining client downloads file
-            clients(2) ! DownloadFileFrom(tracker, filename)
+            clients.head ! FileToDownload(info, clients.tail.toSet, Set.empty)
             Thread sleep 150
 
             // see if it worked
+            within (5 seconds) {
+                expectMsg(DownloadSuccess(filename))
+            }
             assert(filesEqual(from, to))
         }
     }

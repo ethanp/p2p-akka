@@ -33,39 +33,39 @@ class Tracker extends Actor with ActorLogging {
 
             val desiredFilename = info.filename
             def hashMatches = knowledgeOf(desiredFilename).fileInfo == info
-            def alreadyKnown = knowledgeOf contains desiredFilename
-            def replyDifferentFileExists() = sender ! TrackerSideError(s"different file named $desiredFilename already tracked")
+            def filenameKnown = knowledgeOf contains desiredFilename
+            def replyDifferentFileExists = sender ! TrackerSideError(s"different file named $desiredFilename already tracked")
+            def replyNoChange = sender ! TrackerSideError("already knew you are seeding this file")
+            def replySuccess = sender ! SuccessfullyAdded(desiredFilename)
+            def successfullyAddToSeeders {
+                addSeeder(desiredFilename, sender())
+                replySuccess
+            }
 
-            if (alreadyKnown) {
-                if (!hashMatches) {
-                    replyDifferentFileExists
-                }
-                else {
-                    val swarm = knowledgeOf(desiredFilename)
-                    if (swarm.seeders.contains(sender())) {
-                        sender ! TrackerSideError("already knew you are seeding this file")
-                    }
-                    else if (swarm.leechers.contains(sender())) {
-                        subtractSeeder(desiredFilename, sender())
-                        addLeecher(desiredFilename, sender())
-                        sender ! SuccessfullyAdded(desiredFilename)
-                    }
-                    else {
-                        addSeeder(desiredFilename, sender())
-                        sender ! SuccessfullyAdded(desiredFilename)
-                    }
-                }
+            if (!filenameKnown) {
+                knowledgeOf(desiredFilename) = FileToDownload(info, Set(sender()), Set.empty)
+                replySuccess
+            }
+            else if (!hashMatches) {
+                replyDifferentFileExists
             }
             else {
-                knowledgeOf(desiredFilename) = FileToDownload(info, Set(sender()), Set())
-                sender ! SuccessfullyAdded(desiredFilename)
+                knowledgeOf(desiredFilename) match {
+                    case swarm if swarm.seeders contains sender =>
+                        replyNoChange
+                    case swarm if swarm.leechers contains sender =>
+                        subtractLeecher(desiredFilename, sender())
+                        successfullyAddToSeeders
+                    case _ =>
+                        successfullyAddToSeeders
+                }
             }
 
         case DownloadFile(filename) =>
             if (knowledgeOf contains filename) {
                 sender ! knowledgeOf(filename) // msg is of type [FileToDownload]
                 addLeecher(filename, sender())
-                if (knowledgeOf(filename).seeders.contains(sender()))
+                if (knowledgeOf(filename).seeders contains sender)
                     subtractSeeder(filename, sender())
             }
             else sender ! TrackerSideError(s"I don't know a file called $filename")
