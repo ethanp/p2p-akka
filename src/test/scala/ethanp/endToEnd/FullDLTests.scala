@@ -9,6 +9,7 @@ import ethanp.file.{FileToDownload, LocalP2PFile}
 import ethanp.firstVersion._
 import org.scalatest.Suites
 
+import scala.collection.mutable
 import scala.concurrent.duration._
 import scala.io.Source._
 import scala.language.postfixOps
@@ -19,21 +20,27 @@ import scala.language.postfixOps
  */
 class FullDLTests extends Suites(
     new SingleDL,
-    new MultiDL
+    new SingleClientMultiDL
 )
 
 class DLTests extends BaseTester {
+    case class Loc(from: String, to: String)
     def filesEqual(path1: String, path2: String): Boolean =
         fromFile(path1).mkString == fromFile(path2).mkString
 
+    var actorsGenerated = 0
+
     def makeActors(num: Int, props: Props, name: String): Vector[ActorRef] =
-        (0 until num).map(i => TestActorRef(props, s"$name-$i")).toVector
+        (0 until num).map { i =>
+            actorsGenerated += 1
+            TestActorRef(props, s"$name-$actorsGenerated")
+        }.toVector
 
     def makeClients(num: Int) = makeActors(num, Props[Client], "client").map(_.asInstanceOf[TestActorRef[Client]])
     def makeTrackers(num: Int) = makeActors(num, Props[Tracker], "tracker").map(_.asInstanceOf[TestActorRef[Tracker]])
     val fromDir = "testfiles"
-    val toDir = "downloads"
-    def fromTo(filename: String) = s"$fromDir/$filename" -> s"$toDir/$filename"
+    def fromTo(filename: String) = Loc(s"$fromDir/$filename", s"downloads/$filename")
+    val testfileNames = (2 to 3).map(i => s"input$i.txt") :+ "Test1.txt"
 }
 
 class SingleDL extends DLTests {
@@ -42,7 +49,7 @@ class SingleDL extends DLTests {
         "have the same contents" in {
             val clients = makeClients(3)
             val filename = "Test1.txt"
-            val (from, to) = fromTo(filename)
+            val Loc(from, to) = fromTo(filename)
             val info = LocalP2PFile.loadFile(filename, from).fileInfo
             new File(to).delete()
 
@@ -63,22 +70,18 @@ class SingleDL extends DLTests {
         }
     }
 }
-class MultiDL extends DLTests {
+class SingleClientMultiDL extends DLTests {
     "Multiple concurrent downloads" should {
         "result in files with their original contents" in {
             val clients = makeClients(3)
-
             val filenames = (2 to 3).map(i => s"input$i.txt") :+ "Test1.txt"
-
-            var locs = Set.empty[(String, String)]
-
+            var locs = Set.empty[Loc]
             for (filename <- filenames) {
-                val ft: (String, String) = fromTo(filename)
-                locs += ft
-                val info = LocalP2PFile.loadFile(filename, ft._1).fileInfo
-                new File(ft._2).delete()
-
-                clients.tail foreach (_.underlyingActor.loadFile(ft._1, filename))
+                val loc = fromTo(filename)
+                locs += loc
+                val info = LocalP2PFile.loadFile(filename, loc.from).fileInfo
+                new File(loc.to).delete()
+                clients.tail foreach (_.underlyingActor.loadFile(loc.from, filename))
                 clients.head.underlyingActor.notificationListeners += self
                 clients.head ! FileToDownload(info, clients.tail.toSet, Set.empty)
             }
@@ -86,9 +89,50 @@ class MultiDL extends DLTests {
             within(5 seconds) {
                 expectMsgAllOf(filenames map DownloadSuccess:_*)
             }
-            locs foreach {
-                case (from, to) =>
-                    assert(filesEqual(from, to))
+            locs foreach { i =>
+                assert(filesEqual(i.from, i.to))
+            }
+        }
+    }
+}
+
+class MultiClientMultiDL extends DLTests {
+    "Multiple concurrent downloads" should {
+        "result in files with their original contents" in {
+            val clients = makeClients(2)
+            def cToDir(name: String) = s"downloads_$name"
+            val peers = makeClients(2)
+            val clientLocs = clients.map(i => mutable.Set.empty[Loc])
+            for (filename <- testfileNames) {
+                val from = s"$fromDir/$filename"
+                def tof(name: String) = s"${cToDir(name)}/$filename"
+                val info = LocalP2PFile.loadFile(filename, from).fileInfo
+                peers foreach { p =>
+                    p.underlyingActor.loadFile(from, filename)
+                }
+                clients.zip(clientLocs).foreach { case (client, clientLoc) =>
+                    val loc = Loc(from, tof(client.path.name))
+                    clientLoc += loc
+                    new File(loc.to).delete()
+                    client.underlyingActor.notificationListeners += self
+                    client ! FileToDownload(info, peers.toSet, Set.empty)
+                }
+            }
+            // see if it worked
+            within(5 seconds) {
+                expectMsgAllOf(
+                    (
+                        for {
+                            client <- clients
+                            filename <- testfileNames
+                        } yield DownloadSuccess(filename)
+                    ):_*
+                )
+            }
+            clientLocs foreach { locs =>
+                locs foreach { i =>
+                    assert(filesEqual(i.from, i.to))
+                }
             }
         }
     }
