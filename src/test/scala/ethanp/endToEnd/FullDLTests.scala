@@ -7,6 +7,7 @@ import akka.testkit.TestActorRef
 import ethanp.actors.BaseTester
 import ethanp.file.{FileToDownload, LocalP2PFile}
 import ethanp.firstVersion._
+import org.scalatest.Suites
 
 import scala.concurrent.duration._
 import scala.io.Source._
@@ -16,6 +17,11 @@ import scala.language.postfixOps
  * Created by Ethan Petuchowski on 7/6/15.
  *
  */
+class FullDLTests extends Suites(
+    new SingleDL,
+    new MultiDL
+)
+
 class DLTests extends BaseTester {
     def filesEqual(path1: String, path2: String): Boolean =
         fromFile(path1).mkString == fromFile(path2).mkString
@@ -29,7 +35,8 @@ class DLTests extends BaseTester {
     val toDir = "downloads"
     def fromTo(filename: String) = s"$fromDir/$filename" -> s"$toDir/$filename"
 }
-class FullDLTests extends DLTests {
+
+class SingleDL extends DLTests {
 
     "A downloaded file" should {
         "have the same contents" in {
@@ -49,25 +56,40 @@ class FullDLTests extends DLTests {
             Thread sleep 150
 
             // see if it worked
-            within (5 seconds) {
+            within(5 seconds) {
                 expectMsg(DownloadSuccess(filename))
             }
             assert(filesEqual(from, to))
         }
     }
+}
+class MultiDL extends DLTests {
+    "Multiple concurrent downloads" should {
+        "result in files with their original contents" in {
+            val clients = makeClients(3)
 
-    "downloading a file" should {
-        val dir = new File("downloads")
-        if (dir.exists()) dir.delete()
+            val filenames = (2 to 3).map(i => s"input$i.txt") :+ "Test1.txt"
 
-        val client = TestActorRef(Props[Client])
+            var locs = Set.empty[(String, String)]
 
-//        client !
+            for (filename <- filenames) {
+                val ft: (String, String) = fromTo(filename)
+                locs += ft
+                val info = LocalP2PFile.loadFile(filename, ft._1).fileInfo
+                new File(ft._2).delete()
 
-        "create the download directory" in {
-            dir should exist
+                clients.tail foreach (_.underlyingActor.loadFile(ft._1, filename))
+                clients.head.underlyingActor.notificationListeners += self
+                clients.head ! FileToDownload(info, clients.tail.toSet, Set.empty)
+            }
+            // see if it worked
+            within(5 seconds) {
+                expectMsgAllOf(filenames map DownloadSuccess:_*)
+            }
+            locs foreach {
+                case (from, to) =>
+                    assert(filesEqual(from, to))
+            }
         }
-//        "create the file" ignore {}
-//        "eventually own the full file" ignore {}
     }
 }
