@@ -11,20 +11,19 @@ import scala.collection.immutable.BitSet
 import scala.collection.mutable
 import scala.concurrent.duration._
 import scala.language.postfixOps
+import scala.reflect.io.Path
 
 /**
  * Ethan Petuchowski
  * 6/4/15
  */
-class Client extends Actor with ActorLogging {
+class Client(val downloadDir: File) extends Actor with ActorLogging {
 
     /* FIELDS */
-
     val localFiles = mutable.Map.empty[String, LocalP2PFile]
     val localAbbrevs = mutable.Map.empty[Sha2, String]
     val knownTrackers = mutable.Set.empty[ActorRef] // Note: actor refs CAN be sent to remote machine
-    implicit val timeout: akka.util.Timeout = 2 seconds
-    val downloadDir = new File("downloads")
+    implicit val timeout: akka.util.Timeout = 2.seconds
     if (!downloadDir.exists()) downloadDir.mkdir()
     var currentDownloads = Map.empty[FileInfo, ActorRef/*FileDownloaders*/]
     var notificationListeners = Set.empty[ActorRef]
@@ -104,7 +103,7 @@ class Client extends Actor with ActorLogging {
 
 
     /* RECEIVE METHODS */
-
+    def loadFile(path: Path, name: String): LocalP2PFile = loadFile(path.toString(), name)
     def loadFile(pathString: String, name: String): LocalP2PFile = {
         log.info(s"loading $pathString")
         val localFile = LocalP2PFile.loadFile(name, pathString)
@@ -114,4 +113,8 @@ class Client extends Actor with ActorLogging {
     }
 }
 
-
+object Client {
+    def props = Props(new Client(new File("downloads")))
+    def props(downloadsDir: File) = Props(new Client(downloadsDir))
+    def props(downloadsDir: String) = Props(new Client(new File(downloadsDir)))
+}

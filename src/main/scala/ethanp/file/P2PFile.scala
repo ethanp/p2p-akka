@@ -7,6 +7,7 @@ import ethanp.file.LocalP2PFile._
 
 import scala.collection.mutable
 import scala.util.{Failure, Success, Try}
+import scala.reflect.io.Path
 
 /**
  * Ethan Petuchowski
@@ -150,6 +151,8 @@ object LocalP2PFile {
         readCarefully()
         finalChunkHashes
     }
+
+    def loadFile(path: Path, name: String): LocalP2PFile = loadFile(name, path.toString())
 
     def loadFile(name: String, path: String): LocalP2PFile = {
         val file = new File(path)

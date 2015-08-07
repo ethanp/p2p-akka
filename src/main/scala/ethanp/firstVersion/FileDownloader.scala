@@ -26,8 +26,8 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
      * and fail if the file already exists      */
     val localFile = new File(downloadDir, filename)
     if (localFile.exists()) {
-        log.error(s"you already have $filename in your filesystem!")
-        context.stop(self) // instantaneous self-immolation
+        log error s"you already have $filename in your filesystem!"
+        context stop self // instantaneous self-immolation
     }
 
 
