@@ -106,9 +106,8 @@ class SingleClientMultiDL extends DLTests {
             within(5 seconds) {
                 expectMsgAllOf(testfileNames map DownloadSuccess:_*)
             }
-            testLocs foreach { i =>
-                assert(filesEqual(i))
-            }
+            for (loc <- testLocs)
+                assert(filesEqual(loc))
         }
     }
 }
@@ -163,11 +162,8 @@ class MultiClientMultiDL extends DLTests {
                     ):_*
                 )
             }
-            clientLocs foreach { locs =>
-                locs foreach { i =>
-                    assert(filesEqual(i.from, i.to))
-                }
-            }
+            for (locs <- clientLocs; loc <- locs)
+                assert(filesEqual(loc))
         }
     }
 }

@@ -3,21 +3,71 @@
 Much simplified version of BitTorrent.
 
 * A client loads a local file, converts it into a file hash, and an array of
-  "chunk hashes", i.e. hashes of individual chunks of the file, and uploads
-  these hashes along with the file name to all "trackers" it knows.
+  "chunk hashes" (i.e. hashes of individual chunks of the file) and uploads
+  these hashes along with the file name to all "trackers" it knows
     * If the hash matches the hash of any file the tracker currently has by
       this name, or the tracker has no file with this name, the tracker adds
-      this client to the list of known "seeders" of this file.
-* A client requests the list of seeders of a file from a tracker, and receives
-  their addresses
-* The client initiates chunk requests from 4 seeders at a time, and they send
-  the client their chunks. The client saves these chunks to a local file.
+      this client to the list of known "seeders" of this file
+    * If the tracker has a file with this name but a different hash, the
+      new listing will be _rejected_
+* A client may request the list of seeders of a file from a tracker, and 
+  receive their addresses (in the form of Akka `PeerRef`s)
+* The client initiates chunk requests from up to 4 seeders at a time
+    * they send the client their chunks, and the client saves these chunks to
+      a local file
 
-### Example usage
+### Tests
 
-**This was how the first prototype worked, it may not work anymore as I've moved to TDD.
-So you may want to just run the test cases instead. There will be a new version of the
-*example usage* once the new protocol is implemented.**
+I am using TDD, please run the `scalatest` tests in the `tests` directory to
+verify that your dependencies are there and everything is up and running
+properly.
+
+### Actor Structure
+
+* `Tracker` --- waits for people to say they're seeding, or to ask who's
+  seeding
+* `Client`
+    * converts local available files into hashes and sends them to Tracker
+    * Spawns a `ChunkReplyer` upon chunk requests from other clients
+    * Spawns a `FileDownloader` upon download request from user
+* `FileDownloader` --- spawns `ChunkDownloader`s to download chunks
+    * Tells `Client` actor when the download is finished
+    * Spawns up to 4 concurrent `ChunkDownloaders`
+    * Blacklists peers and retries chunk-downloads when they fail (_untested_)
+* `ChunkDownloader` --- requests a specific chunk of a file from a peer
+    * Recieves the chunk in "pieces" (of the chunk)
+    * Upon receiving a complete "piece", the `FileDownloader` is informed, so
+      that it can update the current download speed, which is printed every
+      second
+    * If no piece arrives beyond a timeout (15 seconds), the download *fails*
+    * When the chunk transfer is complete, the `FileDownloader` is informed, os
+      it can choose a new chunk to download, and a peer to download it from,
+      and spawn a new `ChunkDownloader`
+
+#### Next-Level Tests
+
+Allow configurable `max-upload-speed` on client and use it to make writing most
+of these tests *much* easier because to make a file take a while to download, I
+can just set the upload speed really low instead of having some gigantic file.
+_Max upload speed_ is feature that should be available to the user anyway.
+
+1. 2 peers have file but 1 *dies* part-way through transfer
+2. 1 of two peers sends corrupted chunk, other does rest of file
+3. Download from peer who doesn't have whole file
+4. Download from peer who comes online after transfer starts
+5. CLI-based progress bar by setting the `max-upload-speed` to e.g.
+   2-bytes-per-second
+
+### Eventually...
+
+1. DHT for peer discovery
+2. Run/test across multiple JVMs/machines
+
+### (OLD) Example usage
+
+**This probably doesn't work anymore as I've moved to TDD. _Please just run the
+test cases instead._ There will be a new version of the *example usage* once I
+get a better command-line interface running.**
 
 Fire it up, run "`Master.scala`" and paste the following text into your
 console. This script will transfer the textfile `testfiles/Test1.txt` from two
@@ -40,44 +90,3 @@ below is not necessary, it's just to show that the file exists (and none other
 do) on the tracker.
     
     download 2 0 test1
-
-
-### There are 4 different "actors":
-
-* `Tracker` --- waits for people to say they're seeding, or to ask who's
-  seeding
-* `Client`
-    * converts local files into hashes and sends them to Tracker
-    * responds to chunk requests from other clients
-    * Spawns a `FileDownloader` on download request
-* `FileDownloader` --- spawns `ChunkDownloader`s to download chunks
-    * Tells `Client` actor when the download is finished
-    * Spawns 4 concurrent `ChunkDownloaders`
-    * Blacklists peers and retries chunk-downloads when they fail
-* `ChunkDownloader` --- requests a specific chunk of a file from a peer
-    * Recieves the chunk in "pieces" (of the chunk)
-    * Upon receiving a complete "piece", the `FileDownloader` is informed, so
-      that it can update the current download speed, which is printed every
-      second
-    * If no piece arrives beyond a timeout (15 seconds), the download *fails*
-    * When the chunk transfer is complete, the `FileDownloader` is informed, os
-      it can choose a new chunk to download, and a peer to download it from,
-      and spawn a new `ChunkDownloader`
-
-### Next Steps
-
-1. Download from other leechers.
-
-#### New Tests
-
-1. 2 peers have file but 1 *dies* part-way through transfer
-2. 1 of two peers sends corrupted chunk, other does rest of file
-3. Download from peer who doesn't have whole file
-    1. Requires new protocol
-3. Download from peer who comes online after transfer starts
-
-### Eventually...
-
-1. DHT for peer discovery
-2. Run in multiple JVMs
-3. Test in multiple JVMs
