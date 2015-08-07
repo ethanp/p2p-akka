@@ -3,6 +3,7 @@ package ethanp.firstVersion
 import java.io.File
 
 import akka.actor._
+import akka.contrib.throttle.Throttler._
 import akka.event.LoggingReceive
 import akka.pattern.ask
 import ethanp.file.{FileInfo, FileToDownload, LocalP2PFile, Sha2}
@@ -27,7 +28,7 @@ class Client(val downloadDir: File) extends Actor with ActorLogging {
     if (!downloadDir.exists()) downloadDir.mkdir()
     var currentDownloads = Map.empty[FileInfo, ActorRef/*FileDownloaders*/]
     var notificationListeners = Set.empty[ActorRef]
-
+    var uploadLimit: Rate = 1 msgsPerSecond
 
     /* UTILITIES */
 
@@ -75,7 +76,7 @@ class Client(val downloadDir: File) extends Actor with ActorLogging {
               */
             if (localAbbrevs contains infoAbbrev) {
                 val p2PFile = localFiles(localAbbrevs(infoAbbrev))
-                context.actorOf(Props(classOf[ChunkReplyer], p2PFile)) ! ReplyTo(sender(), chunkIdx)
+                context.actorOf(Props(classOf[ChunkReplyer], p2PFile, uploadLimit)) ! ReplyTo(sender(), chunkIdx)
             }
             else sender ! PeerSideError("file with that hash not known")
 
@@ -113,6 +114,10 @@ class Client(val downloadDir: File) extends Actor with ActorLogging {
     }
 }
 
+/**
+ * this pattern was "recommended" in the docs
+ * http://doc.akka.io/docs/akka/snapshot/scala/actors.html#recommended-practices
+ */
 object Client {
     def props = Props(new Client(new File("downloads")))
     def props(downloadsDir: File) = Props(new Client(downloadsDir))

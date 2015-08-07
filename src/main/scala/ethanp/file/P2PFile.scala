@@ -48,7 +48,7 @@ case class FileInfo(
 
     /** a sha2 hash of the contents of the FileInfo itself */
     lazy val abbreviation: Sha2 = {
-        val elemsAsString = filename + chunkHashes.mkString("") + fileLength
+        val elemsAsString = filename + (chunkHashes mkString "") + fileLength
         Sha2(elemsAsString.getBytes)
     }
 }
@@ -112,10 +112,10 @@ object LocalP2PFile {
         val chunkHashes      = mutable.MutableList.empty[Sha2]
         def finalChunkHashes = chunkHashes.toVector
 
-        val len         = file.length()
-        var bytesRead   = 1
-        var offset      = 0
-        var totalRead   = 0
+        val len       = file.length()
+        var bytesRead = 1
+        var offset    = 0
+        var totalRead = 0
 
         def doneReading = totalRead >= len
         def filledReadArray = offset + bytesRead == readArr.length
