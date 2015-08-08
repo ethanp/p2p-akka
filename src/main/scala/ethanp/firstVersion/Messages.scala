@@ -1,6 +1,7 @@
 package ethanp.firstVersion
 
 import akka.actor.ActorRef
+import akka.contrib.throttle.Throttler.Rate
 import ethanp.file.{FileInfo, FileToDownload, Sha2}
 
 import scala.collection.BitSet
@@ -33,3 +34,4 @@ case class Ping(infoAbbrev: Sha2)
 case object Seeding
 case class Leeching(unavblty: BitSet)
 case class ReplyTo(requester: ActorRef, chunkIdx: Int)
+case class SetUploadLimit(rate: Rate)

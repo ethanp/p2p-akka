@@ -39,6 +39,8 @@ class Client(val downloadDir: File) extends Actor with ActorLogging {
 
     override def receive: Receive = LoggingReceive {
 
+        case SetUploadLimit(rate: Rate) => uploadLimit = rate
+
         case LoadFile(pathString, name) =>
             notificationListeners += sender
             val localFile: LocalP2PFile = loadFile(pathString, name)

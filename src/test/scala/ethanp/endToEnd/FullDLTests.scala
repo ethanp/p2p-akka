@@ -2,6 +2,7 @@ package ethanp.endToEnd
 
 import akka.actor.{ActorRef, Props}
 import akka.testkit.TestActorRef
+import akka.contrib.throttle.Throttler._
 import ethanp.actors.BaseTester
 import ethanp.file.{FileToDownload, LocalP2PFile}
 import ethanp.firstVersion._
@@ -41,7 +42,11 @@ class DLTests extends BaseTester {
             TestActorRef(props, s"$name-$actorCtr")
         }
 
-    def makeClients(num: Int) = makeActors(num, Client.props, "client").map(_.asInstanceOf[TestActorRef[Client]])
+    def makeFastClients(num: Int) = {
+        val clients = makeActors(num, Client.props, "client").map(_.asInstanceOf[TestActorRef[Client]])
+        clients foreach (_ ! SetUploadLimit(20 msgsPerSecond))
+        clients
+    }
     def makeTrackers(num: Int) = makeActors(num, Props[Tracker], "tracker").map(_.asInstanceOf[TestActorRef[Tracker]])
     val (fromDir, toDir): (Path, Path) = ("testfiles", "downloads")
     def fromTo(filename: String) = Loc(fromDir/filename, toDir/filename)
@@ -52,7 +57,7 @@ class SingleDL extends DLTests {
 
     "A downloaded file" should {
         "have the same contents" in {
-            val clients = makeClients(3)
+            val clients = makeFastClients(3)
             val filename = "Test1.txt"
             val Loc(from, to) = fromTo(filename)
             val info = LocalP2PFile.loadFile(from.toFile, filename).fileInfo
@@ -82,7 +87,7 @@ class SingleDL extends DLTests {
 class SingleClientMultiDL extends DLTests {
     "Multiple concurrent downloads" should {
         "all result in files with their original contents" in {
-            val clients = makeClients(3)
+            val clients = makeFastClients(3)
             val testLocs = testfileNames map fromTo
 
             // for each test file
@@ -117,7 +122,7 @@ class MultiClientMultiDL extends DLTests {
         "result in files with their original contents" in {
 
             // these guys will serve the files
-            val peers = makeClients(2)
+            val peers = makeFastClients(2)
 
             // these guys will download the files
             // the names 1 and 2 were already taken above

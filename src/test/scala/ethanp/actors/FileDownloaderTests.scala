@@ -18,7 +18,9 @@ import scala.language.postfixOps
  * 6/14/15
  */
 
-/* TODO there must be a better way to run all the tests in here */
+/* TODO there must be a better way to run all the tests in here
+ * and it probably involves some basic SBT magic
+ */
 class FileDownloaderTests extends Suites(
   new FileDownloaderTestLiveAndDeadSeedersAndLeechers,
   new FileDownloaderTestJustEnoughLeechers,

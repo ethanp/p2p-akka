@@ -12,22 +12,19 @@ import scala.util.{Failure, Success}
  * 7/3/15
  */
 class ChunkReplyer(localP2PFile: LocalP2PFile, replyRate: Rate) extends Actor with ActorLogging {
-    def handleErrors: PartialFunction[Any, Unit] = {
-        case e: Throwable =>
-            log.error(
-                s"""
-                  |$e
-                  |couldn't read file ${localP2PFile.fileInfo.filename}
-                  |ignoring client request
-                 """.stripMargin
-            )
+
+    def logError(e: Throwable) = {
+        log.error(s"""
+                     |$e
+                     |couldn't read file ${localP2PFile.fileInfo.filename}
+                     |ignoring client request
+                   """.stripMargin
+        )
         // don't exit or anything. just keep trucking.
     }
 
     def sendChunk(m: ReplyTo): Unit = {
-        var pieceIdx = 0
         val piecesThisChunk = localP2PFile.fileInfo.numPiecesInChunk(m.chunkIdx)
-        var hasntFailed = true
 
         /**
          * FROM: http://doc.akka.io/docs/akka/snapshot/contrib/throttle.html
@@ -37,32 +34,30 @@ class ChunkReplyer(localP2PFile: LocalP2PFile, replyRate: Rate) extends Actor wi
          *       to each ChunkReplyer in the constructor instead of having
          *       each ChunkReplyer create its OWN throttler. However, I think
          *       THIS is the way µTorrent does it, so I'm doing this for now.
+         *
+         * Having the Throttler be a child of this actor does not work because
+         * this actor will be dead before the throttled messages will all have
+         * been sent out.
          */
-        val uploadThrottler = context.actorOf(Props(classOf[TimerBasedThrottler], replyRate))
+        val uploadThrottler = context.system.actorOf(Props(classOf[TimerBasedThrottler], replyRate))
         uploadThrottler ! SetTarget(Some(m.requester)) // NOTE: given-pattern to set attribute of remote actor
 
-        def done: Boolean = pieceIdx == piecesThisChunk
-        while (!done && hasntFailed) {
-            localP2PFile.getPiece(m.chunkIdx, pieceIdx) match {
+        for (piece ← 0 until piecesThisChunk) {
+            localP2PFile.getPiece(m.chunkIdx, piece) match {
                 case Success(arr) =>
-                    // doesn't need to pass fileInfo bc it's being sent to
-                    // particular ChunkDownloader
-                    uploadThrottler ! Piece(arr, pieceIdx)
-                    pieceIdx += 1
+                    uploadThrottler ! Piece(arr, piece)
+
                 case Failure(e) =>
-                    log.error("request failed with " + e.getClass)
-                    hasntFailed = false
+                    logError(e)
+                    return // give up (silently) on sending chunk
             }
         }
-        if (done && hasntFailed) {
-            uploadThrottler ! ChunkSuccess // tells requester chunk done downloading
-        }
+        uploadThrottler ! ChunkSuccess // now requester knows it is done downloading chunk
     }
 
     override def receive: Receive = {
         case m : ReplyTo =>
-            try sendChunk(m)
-            catch handleErrors
-            finally self ! PoisonPill
+            sendChunk(m)
+            self ! PoisonPill
     }
 }

@@ -11,7 +11,7 @@ import scala.language.postfixOps
  * 6/14/15
  */
 class ClientTests extends BaseTester {
-    val clientRef = TestActorRef[Client]
+    val clientRef = TestActorRef(Client.props).asInstanceOf[TestActorRef[Client]]
     val client = clientRef.underlyingActor
 
     "gleaning info from trackers" should {

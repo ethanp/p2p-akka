@@ -46,10 +46,8 @@ properly.
 
 #### Next-Level Tests
 
-Allow configurable `max-upload-speed` on client and use it to make writing most
-of these tests *much* easier because to make a file take a while to download, I
-can just set the upload speed really low instead of having some gigantic file.
-_Max upload speed_ is feature that should be available to the user anyway.
+These should use the `Client`'s configurable `uploadLimit` to make it easier to
+investigate what exactly is going on.
 
 1. 2 peers have file but 1 *dies* part-way through transfer
 2. 1 of two peers sends corrupted chunk, other does rest of file
