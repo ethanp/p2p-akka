@@ -4,13 +4,12 @@ import java.io.File
 
 import akka.actor.Props
 import akka.testkit.TestActorRef
+import ethanp.actors.BaseTester.ForwardingActor
 import ethanp.file.FileToDownload
 import ethanp.firstVersion._
-import ethanp.actors.BaseTester.ForwardingActor
-import org.scalatest.Suites
 
-import scala.concurrent.duration._
 import scala.collection.{BitSet, mutable}
+import scala.concurrent.duration._
 import scala.language.postfixOps
 
 /**
@@ -18,15 +17,7 @@ import scala.language.postfixOps
  * 6/14/15
  */
 
-/* TODO there must be a better way to run all the tests in here
- * and it probably involves some basic SBT magic
- */
-class FileDownloaderTests extends Suites(
-  new FileDownloaderTestLiveAndDeadSeedersAndLeechers,
-  new FileDownloaderTestJustEnoughLeechers,
-  new FileDownloaderTestNotFullyAvailable
-)
-
+/** NOTE: run ALL tests using `sbt test` */
 class FileDownloaderTestLiveAndDeadSeedersAndLeechers extends BaseTester {
 
     /* TODO keep tests at a high level
