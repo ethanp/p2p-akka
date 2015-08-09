@@ -36,21 +36,21 @@ class BaseChunkDLTester extends BaseTester {
      */
     val cDlRef = TestActorRef(Props(classOf[ChunkDownloader], p2pF, chunkIdx, self))
     val cDlPtr: ChunkDownloader = cDlRef.underlyingActor
-    quickly(expectMsgClass(classOf[ChunkRequest]))
+    "newly spawned chunk downloader should request chunk from specified peer" in {
+        quickly(expectMsgClass(classOf[ChunkRequest]))
+    }
     cDlRef ! AddMeAsListener
 }
 
 class ChunkDLValidDataTest extends BaseChunkDLTester {
     "this test" should {
         "not already have data in the outfile" in {
-            if (localOutFile.exists()) {
-                localOutFile should have length 0
-            }
+            localOutFile shouldNot exist
         }
     }
     "receiving valid pieces" should {
         "have the right receiver buffer" in {
-            cDlPtr.piecesRcvd should have size 3
+            cDlPtr.piecesRcvd shouldEqual Array(false, false, false)
         }
         "mark first piece received (and only it) off" in {
             val bytes = inputTextP2P.getPiece(chunkIdx, 0).get
@@ -78,26 +78,34 @@ class ChunkDLValidDataTest extends BaseChunkDLTester {
         "write chunk of CORRECT data to disk" in {
             localOutFile should exist
 
-            val realFileReader = new FileInputStream(inputTextP2P.file)
+            /* open written file and real file */
+            val realFileReader     = new FileInputStream(inputTextP2P.file)
             val fileContentChecker = new FileInputStream(localOutFile)
 
-            val realData = new Array[Byte](chunkSize)
+            val realData    = new Array[Byte](chunkSize)
             val writtenData = new Array[Byte](chunkSize)
 
+            /* read the contents */
             fileContentChecker read writtenData
-            realFileReader read realData
+            realFileReader     read realData
 
+            /* ensure equality */
             writtenData shouldEqual realData
         }
     }
 }
 class ChunkDLInvalidDataTest extends BaseChunkDLTester {
     "receiving invalid data" should {
+        cDlRef ! Piece(Array[Byte](12.toByte, 32.toByte, 42.toByte), 0)
+        cDlRef ! ChunkSuccess
+
         "not write the chunk to disk" in {
-            // TODO
+            localOutFile shouldNot exist
         }
         "notify parent of bad peer" in {
-            // TODO
+            quickly {
+                expectMsg(ChunkDLFailed(chunkIdx, self))
+            }
         }
     }
 }
