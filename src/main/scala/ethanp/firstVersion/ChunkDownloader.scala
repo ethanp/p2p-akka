@@ -19,12 +19,11 @@ class ChunkDownloader(p2PFile: LocalP2PFile, chunkIdx: Int, peerRef: ActorRef) e
 
     var receiveTimeout = 15.seconds
 
-
     /* FIELDS */
 
     val piecesRcvd = new Array[Boolean](p2PFile.fileInfo numPiecesInChunk chunkIdx)
     val chunkData = new Array[Byte](p2PFile.fileInfo numBytesInChunk chunkIdx)
-
+    var listeners = Set(context.parent)
 
     /* an IOException here will crash the program. I don't really have any better ideas...retry?
      * I'll address it if it comes up
@@ -60,12 +59,12 @@ class ChunkDownloader(p2PFile: LocalP2PFile, chunkIdx: Int, peerRef: ActorRef) e
         peerRef ! ChunkRequest(p2PFile.fileInfo.abbreviation, chunkIdx)
     }
 
-    def notifyParent(msg: ChunkStatus) {
-        context.parent ! msg
+    def notifyListenersAndDie(msg: ChunkStatus) {
+        listeners foreach (_ ! msg)
         self ! PoisonPill
     }
-    def chunkXferSuccess() = notifyParent(ChunkComplete(chunkIdx))
-    def chunkXferFailed() = notifyParent(ChunkDLFailed(chunkIdx, peerRef))
+    def chunkXferSuccess() = notifyListenersAndDie(ChunkComplete(chunkIdx))
+    def chunkXferFailed() = notifyListenersAndDie(ChunkDLFailed(chunkIdx, peerRef))
 
     override def receive: Actor.Receive = LoggingReceive {
         case Piece(data, idx) =>
@@ -83,5 +82,8 @@ class ChunkDownloader(p2PFile: LocalP2PFile, chunkIdx: Int, peerRef: ActorRef) e
             val success = writeChunk()
             if (success) chunkXferSuccess()
             else chunkXferFailed()
+
+        case AddMeAsListener =>
+            listeners += sender
     }
 }

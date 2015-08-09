@@ -35,3 +35,4 @@ case object Seeding
 case class Leeching(unavblty: BitSet)
 case class ReplyTo(requester: ActorRef, chunkIdx: Int)
 case class SetUploadLimit(rate: Rate)
+case object AddMeAsListener
