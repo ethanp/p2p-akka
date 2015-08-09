@@ -48,63 +48,74 @@ class ChunkDLValidDataTest extends BaseChunkDLTester {
             localOutFile shouldNot exist
         }
     }
-    "receiving valid pieces" should {
-        "have the right receiver buffer" in {
-            cDlPtr.piecesRcvd shouldEqual Array(false, false, false)
-        }
-        "mark first piece received (and only it) off" in {
-            val bytes = inputTextP2P.getPiece(chunkIdx, 0).get
-            cDlRef ! Piece(bytes, 0)
-            quickly {
-                cDlPtr.piecesRcvd shouldEqual Array(true, false, false)
+    "a ChunkDownloader" when {
+        "receiving valid pieces" should {
+            "have the right receiver buffer" in {
+                cDlPtr.piecesRcvd shouldEqual Array(false, false, false)
             }
-        }
-        "mark rest of pieces off" in {
-            /* send the rest of the pieces over */
-            for (i <- 1 until cDlPtr.piecesRcvd.length)
-                cDlRef ! Piece(inputTextP2P.getPiece(chunkIdx, i).get, i)
-            quickly {
-                cDlPtr.piecesRcvd shouldEqual Array(true, true, true)
+            "mark first piece received (and only it) off" in {
+                val bytes = inputTextP2P.getPiece(chunkIdx, 0).get
+                cDlRef ! Piece(bytes, 0)
+                quickly {
+                    cDlPtr.piecesRcvd shouldEqual Array(true, false, false)
+                }
             }
-        }
-        "notify listeners of download success" in {
-            // still not sure this piece of the protocol will ever come in handy
-            // (btw, the Client already KNOWS the chunk size from `FileInfo` object)
-            cDlRef ! ChunkSuccess
-            quickly {
-                expectMsg(ChunkComplete(chunkIdx))
+            "mark rest of pieces off" in {
+                /* send the rest of the pieces over */
+                for (i <- 1 until cDlPtr.piecesRcvd.length)
+                    cDlRef ! Piece(inputTextP2P.getPiece(chunkIdx, i).get, i)
+                quickly {
+                    cDlPtr.piecesRcvd shouldEqual Array(true, true, true)
+                }
             }
-        }
-        "write chunk of CORRECT data to disk" in {
-            localOutFile should exist
+            "notify listeners of download success" in {
+                // still not sure this piece of the protocol will ever come in handy
+                // (btw, the Client already KNOWS the chunk size from `FileInfo` object)
+                cDlRef ! ChunkSuccess
+                expectSoon(ChunkComplete(chunkIdx))
+            }
+            "write chunk of CORRECT data to disk" in {
+                localOutFile should exist
 
-            /* open written file and real file */
-            val realFileReader     = new FileInputStream(inputTextP2P.file)
-            val fileContentChecker = new FileInputStream(localOutFile)
+                /* open written file and real file */
+                val realFileReader = new FileInputStream(inputTextP2P.file)
+                val fileContentChecker = new FileInputStream(localOutFile)
 
-            val realData    = new Array[Byte](chunkSize)
-            val writtenData = new Array[Byte](chunkSize)
+                val realData = new Array[Byte](chunkSize)
+                val writtenData = new Array[Byte](chunkSize)
 
-            /* read the contents */
-            fileContentChecker read writtenData
-            realFileReader     read realData
+                /* read the contents */
+                fileContentChecker read writtenData
+                realFileReader read realData
 
-            /* ensure equality */
-            writtenData shouldEqual realData
+                /* ensure equality */
+                writtenData shouldEqual realData
+            }
         }
     }
 }
 class ChunkDLInvalidDataTest extends BaseChunkDLTester {
-    "receiving invalid data" should {
-        cDlRef ! Piece(Array[Byte](12.toByte, 32.toByte, 42.toByte), 0)
-        cDlRef ! ChunkSuccess
+    "a ChunkDownloader" when {
+        "receiving invalid data" should {
+            val fakeData = Array(12.toByte, 32.toByte, 42.toByte)
 
-        "not write the chunk to disk" in {
-            localOutFile shouldNot exist
-        }
-        "notify parent of bad peer" in {
-            quickly {
-                expectMsg(ChunkDLFailed(chunkIdx, self))
+            /* send client the fake data */
+            for (i ← 0 to 2) cDlRef ! Piece(fakeData, i)
+
+            "still check off pieces received" in {
+                quickly {
+                    cDlPtr.piecesRcvd shouldEqual Array(true, true, true)
+                }
+            }
+
+            /* tell ChunkDownloader that the transfer is complete*/
+            cDlRef ! ChunkSuccess
+
+            "not write the chunk to disk" in {
+                localOutFile shouldNot exist
+            }
+            "notify parent of bad peer" in {
+                expectSoon(ChunkDLFailed(chunkIdx, self))
             }
         }
     }

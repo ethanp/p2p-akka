@@ -36,6 +36,7 @@ with Inside         // allows `inside (caseClass) { case CaseClass(abcd) => abcd
     def quickly[T](f: => T): Unit = { within[T](duration)(f); assert(true) /*for highlighting*/ }
     def splitAtIndex[U <: Iterable[ActorRef]](seq: U, n: Int): (U, U) = (seq take n).asInstanceOf[U] → (seq drop n).asInstanceOf[U]
     def expectNOf[T](n: Int, t: T): Unit = for (i ← 1 to n) expectMsg(t)
+    def expectSoon[T](t: T): Unit = quickly(expectMsg(t))
 }
 
 object BaseTester {
