@@ -17,7 +17,7 @@ class ChunkDownloader(p2PFile: LocalP2PFile, chunkIdx: Int, peerRef: ActorRef) e
 
     /* CONFIGURATION */
 
-    var receiveTimeout = 15.seconds
+    var receiveTimeout = 2.seconds
 
     /* FIELDS */
 

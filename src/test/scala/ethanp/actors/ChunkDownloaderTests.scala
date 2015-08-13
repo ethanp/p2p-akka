@@ -7,6 +7,7 @@ import akka.testkit.TestActorRef
 import ethanp.file.LocalP2PFile
 import ethanp.firstVersion._
 
+import scala.concurrent.duration._
 
 /**
  * Created by Ethan Petuchowski on 7/2/15.
@@ -116,6 +117,27 @@ class ChunkDLInvalidDataTest extends BaseChunkDLTester {
             }
             "notify parent of bad peer" in {
                 expectSoon(ChunkDLFailed(chunkIdx, self))
+            }
+        }
+    }
+}
+class ChunkDLTimeoutTest extends BaseChunkDLTester {
+    "a ChunkDownloader" when {
+        "timing out on a download" should {
+            val fakeData = Array(12.toByte, 32.toByte, 42.toByte)
+
+            /* send client the fake data */
+            cDlRef ! Piece(fakeData, 0)
+
+            "notify parent of failure and peer" in {
+                // not being in an "in" block made this test fail?!
+                within(cDlPtr.receiveTimeout + 2.seconds) {
+                    expectMsg(ChunkDLFailed(0, self))
+                }
+                cDlPtr.piecesRcvd shouldEqual Array(true, false, false)
+            }
+            "not write the chunk to disk" in {
+                localOutFile shouldNot exist
             }
         }
     }
