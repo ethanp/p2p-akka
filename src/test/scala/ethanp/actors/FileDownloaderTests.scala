@@ -91,8 +91,8 @@ class FileDownloaderTestLiveAndDeadSeedersAndLeechers extends BaseTester {
                 for (i <- 0 until fileInfo.numChunks) {
                     fDlRef ! ChunkComplete(i)
                 }
-                quickly {
-                    expectMsg(DownloadSuccess(fileInfo.filename))
+                expectSoon {
+                    DownloadSuccess(fileInfo.filename)
                 }
             }
         }
@@ -154,9 +154,7 @@ class FileDownloaderTestJustEnoughLeechers extends BaseTester {
                     for (i <- 0 until fileInfo.numChunks) {
                         fDlRef ! ChunkComplete(i)
                     }
-                    quickly {
-                        expectMsg(DownloadSuccess(fileInfo.filename))
-                    }
+                    expectSoon(DownloadSuccess(fileInfo.filename))
                 }
             }
         }
