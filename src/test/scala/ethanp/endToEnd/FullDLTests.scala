@@ -67,18 +67,16 @@ class SingleDL extends DLTests {
             clients.tail foreach (_.underlyingActor.loadFile(from, filename))
             Thread sleep 100 // let them load & hash the file
 
-            clients.head.underlyingActor.notificationListeners += self
+            /* listen for e.g. `DownloadSuccess` from client */
+            clients.head.underlyingActor.listeners += self
 
             /* remaining 'head' client downloads file */
             clients.head ! FileToDownload(info, clients.tail.toSet, Set.empty)
-            Thread sleep 150 // wait for download
 
             /* see if it worked */
-            within(5 seconds) {
-                // client thinks download completed
-                expectMsg(DownloadSuccess(filename))
-            }
-            // verify that downloaded file is actually correct
+            expectSoon(DownloadSuccess(filename))
+
+            /* verify that downloaded file is actually correct */
             assert(filesEqual(from, to))
         }
     }
@@ -100,7 +98,7 @@ class SingleClientMultiDL extends DLTests {
                 clients.tail foreach (_.underlyingActor.loadFile(loc.from, filename))
 
                 // register test agent to listen for `DownloadSuccess`
-                clients.head.underlyingActor.notificationListeners += self
+                clients.head.underlyingActor.listeners += self
 
                 // client init's download
                 val info = LocalP2PFile.loadFile(loc.from, filename).fileInfo
@@ -151,7 +149,7 @@ class MultiClientMultiDL extends DLTests {
                     val loc = Loc(from, clientDlDir/filename)
                     clientLoc += loc
                     loc.to.toFile.delete()
-                    client.underlyingActor.notificationListeners += self
+                    client.underlyingActor.listeners += self
                     client ! FileToDownload(info, peers.toSet, Set.empty)
                 }
             }

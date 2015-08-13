@@ -98,7 +98,7 @@ class ChunkDLValidDataTest extends BaseChunkDLTester {
 class ChunkDLInvalidDataTest extends BaseChunkDLTester {
     "a ChunkDownloader" when {
         "receiving invalid data" should {
-            val fakeData = Array(12.toByte, 32.toByte, 42.toByte)
+            val fakeData = Array[Byte](12, 32, 42)
 
             /* send client the fake data */
             for (i ← 0 to 2) cDlRef ! Piece(fakeData, i)
@@ -116,7 +116,12 @@ class ChunkDLInvalidDataTest extends BaseChunkDLTester {
                 localOutFile shouldNot exist
             }
             "notify parent of bad peer" in {
-                expectSoon(ChunkDLFailed(chunkIdx, self))
+                expectSoon {
+                    ChunkDLFailed(
+                        chunkIdx = chunkIdx,
+                        peerPath = self
+                    )
+                }
             }
         }
     }

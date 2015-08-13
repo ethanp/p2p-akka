@@ -27,7 +27,7 @@ class Client(val downloadDir: File) extends Actor with ActorLogging {
     implicit val timeout: akka.util.Timeout = 2.seconds
     if (!downloadDir.exists()) downloadDir.mkdir()
     var currentDownloads = Map.empty[FileInfo, ActorRef/*FileDownloaders*/]
-    var notificationListeners = Set.empty[ActorRef]
+    var listeners = Set.empty[ActorRef]
     var uploadLimit: Rate = 1 msgsPerSecond
 
     /* UTILITIES */
@@ -42,7 +42,7 @@ class Client(val downloadDir: File) extends Actor with ActorLogging {
         case SetUploadLimit(rate: Rate) => uploadLimit = rate
 
         case LoadFile(pathString, name) =>
-            notificationListeners += sender
+            listeners += sender
             val localFile: LocalP2PFile = loadFile(pathString, name)
             log.info("sending to known trackers")
             knownTrackers.foreach(_ ! InformTrackerIHave(localFile.fileInfo))
@@ -59,7 +59,7 @@ class Client(val downloadDir: File) extends Actor with ActorLogging {
             log.error(s"ERROR from tracker ${sender()}: $errMsg")
 
         case DownloadFileFrom(tracker, filename) =>
-            notificationListeners += sender
+            listeners += sender
             if (knownTrackers contains tracker) tracker ! DownloadFile(filename)
             else sender ! ClientError("I don't know that tracker")
 
@@ -82,8 +82,8 @@ class Client(val downloadDir: File) extends Actor with ActorLogging {
             }
             else sender ! PeerSideError("file with that hash not known")
 
-        case m @ SuccessfullyAdded(filename) => notificationListeners.foreach(_ ! m)
-        case m @ DownloadSuccess(filename) => notificationListeners.foreach(_ ! m)
+        case m @ SuccessfullyAdded(filename) => listeners.foreach(_ ! m)
+        case m @ DownloadSuccess(filename) => listeners.foreach(_ ! m)
 
         case Ping(abbrev) =>
             import scala.concurrent.ExecutionContext.Implicits.global

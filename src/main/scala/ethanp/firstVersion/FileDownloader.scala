@@ -62,7 +62,7 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
     /* CONFIGURATION */
 
     var maxConcurrentChunks = 3
-    var progressTimeout = 10 seconds
+    var progressTimeout = 4 seconds
 
     /** called by Akka framework when this Actor is asynchronously started */
     override def preStart(): Unit = potentialDownloadees foreach (_ ! Ping(abbreviation))
