@@ -18,16 +18,13 @@ import scala.language.postfixOps
  * @param downloadDir the directory in which the downloaded file will be saved
  */
 class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor with ActorLogging {
-    import fileDLing.fileInfo._ // <- that's really cool
+    import fileDLing.fileInfo._ // <- is *too* sneaky?
 
-    // this is "shared-nothing", so I don't think local vars need to be `private`?
-
-    /* on creation, we create the file in the local file system,
-     * and fail if the file already exists      */
+    /* fail if the file already exists */
     val localFile = new File(downloadDir, filename)
     if (localFile.exists()) {
         log error s"you already have $filename in your filesystem!"
-        context stop self // instantaneous self-immolation
+        context stop self
     }
 
 
@@ -64,24 +61,32 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
     var maxConcurrentChunks = 3
     var progressTimeout = 4 seconds
 
-    /** called by Akka framework when this Actor is asynchronously started */
+    /**
+     * called by Akka framework when this Actor is asynchronously started
+     *
+     * "Ping" everyone the Tracker told us is 'involved with' this file
+     *
+     * Each Client will respond appropriately with
+     *      1. Seeding
+     *      2. Leeching(avblty)
+     *      3. PeerSideError("file with that hash not known")
+     */
     override def preStart(): Unit = potentialDownloadees foreach (_ ! Ping(abbreviation))
 
     // TODO this should de-register me from all the event buses I'm subscribed to
-    override def postStop(): Unit = () // this is what the default one already does
-
+    override def postStop(): Unit = () // this is the default
 
     /* FIELDS */
 
-    val p2PFile = LocalP2PFile(fileDLing.fileInfo, localFile, unavbl = fullMutableBitSet)
+    val p2PFile = LocalP2PFile.empty(fileDLing.fileInfo, localFile)
 
     /** peers we've timed-out upon recently */
     var quarantine = Set.empty[ActorRef]
 
-    // TODO should updated periodically after new queries of the trackers
+    // TODO should updated periodically after new queries of the Trackers
     var potentialDownloadees: Set[ActorRef] = fileDLing.seeders ++ fileDLing.leechers
 
-    /** added to by responses from the peers when they get Ping'd*/
+    /** added to by responses from the peers when they get Ping'd */
     var liveSeeders = Set.empty[Seeder]
     var liveLeechers = Set.empty[Leecher]
 
@@ -89,6 +94,9 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
     val chunkDownloaders = mutable.Set.empty[ActorRef]
 
     /** check-lists of what needs to be done */
+    // TODO this looks like a bug because the p2PFile already has a unavblty list, isn't this the EXACT same thing?
+    // and there may be instances in the code here wherein one is being updated and the other not...
+    // so I think the `incompleteChunks` variable should be removed.
     val incompleteChunks = fullMutableBitSet // starts out as all ones
     val notStartedChunks = fullMutableBitSet
 
@@ -133,7 +141,8 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
 
     override def receive: Actor.Receive = LoggingReceive {
 
-        case ReceiveTimeout => context.parent ! NoProgress
+        case ReceiveTimeout =>
+            context.parent ! TransferTimeout
 
         case ChunkComplete(idx) =>
             incompleteChunks.remove(idx)
@@ -142,9 +151,9 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
             // TODO publish completion to EventBus
 
         // this is (supposedly) received *after* the ChunkDownloader tried retrying a few times
-        case ChunkDLFailed(idx, peerRef) =>
+        case ChunkDLFailed(idx, peerRef, cause) =>
             // TODO update the FilePeer object
-            // TODO then try again
+            // TODO then try again iff it was just a timeout
 
         // comes from ChunkDownloader
         case DownloadSpeed(numBytes) =>

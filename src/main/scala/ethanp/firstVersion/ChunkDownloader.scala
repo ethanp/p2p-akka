@@ -64,7 +64,7 @@ class ChunkDownloader(p2PFile: LocalP2PFile, chunkIdx: Int, peerRef: ActorRef) e
         self ! PoisonPill
     }
     def chunkXferSuccess() = notifyListenersAndDie(ChunkComplete(chunkIdx))
-    def chunkXferFailed() = notifyListenersAndDie(ChunkDLFailed(chunkIdx, peerRef))
+    def chunkXferFailed(cause: FailureMechanism) = notifyListenersAndDie(ChunkDLFailed(chunkIdx, peerRef, cause))
 
     override def receive: Actor.Receive = LoggingReceive {
         case Piece(data, idx) =>
@@ -76,12 +76,12 @@ class ChunkDownloader(p2PFile: LocalP2PFile, chunkIdx: Int, peerRef: ActorRef) e
             }
 
         // enabled via context.setReceiveTimeout above
-        case ReceiveTimeout => chunkXferFailed()
+        case ReceiveTimeout => chunkXferFailed(TransferTimeout)
 
         case ChunkSuccess =>
             val success = writeChunk()
             if (success) chunkXferSuccess()
-            else chunkXferFailed()
+            else chunkXferFailed(InvalidData)
 
         case AddMeAsListener =>
             listeners += sender

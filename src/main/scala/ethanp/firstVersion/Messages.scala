@@ -24,10 +24,9 @@ case class DownloadFileFrom(trackerLoc: ActorRef, filename: String)
 case class Piece(arr: Array[Byte], pieceIdx: Int)
 sealed trait ChunkStatus extends Serializable
 case class ChunkComplete(chunkIdx: Int) extends ChunkStatus
-case class ChunkDLFailed(chunkIdx: Int, peerPath: ActorRef) extends ChunkStatus
+case class ChunkDLFailed(chunkIdx: Int, peerPath: ActorRef, cause: FailureMechanism) extends ChunkStatus
 case class ChunkRequest(infoAbbrev: Sha2, chunkIdx: Int)
 case object ChunkSuccess
-case object NoProgress
 case class DownloadSpeed(numBytes: Int)
 case class DownloadSuccess(filename: String)
 case class Ping(infoAbbrev: Sha2)
@@ -36,3 +35,7 @@ case class Leeching(unavblty: BitSet)
 case class ReplyTo(requester: ActorRef, chunkIdx: Int)
 case class SetUploadLimit(rate: Rate)
 case object AddMeAsListener
+
+sealed trait FailureMechanism
+case object InvalidData extends FailureMechanism
+case object TransferTimeout extends FailureMechanism

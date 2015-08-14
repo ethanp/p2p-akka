@@ -66,25 +66,4 @@ object BaseTester {
             case _ => None
         }
     }
-
-    /**
-     * An actor that sends a sequence of messages with a random head list, an
-     * interesting value and a random tail list. The idea is that you would
-     * like to test that the interesting value is received and that you cant
-     * be bothered with the rest
-     */
-    class SequencingActor(
-    next: ActorRef, head: Seq[String],
-    tail: Seq[String]) extends Actor {
-        def receive = {
-            case msg =>
-                head foreach {
-                    next ! _
-                }
-                next ! msg
-                tail foreach {
-                    next ! _
-                }
-        }
-    }
 }

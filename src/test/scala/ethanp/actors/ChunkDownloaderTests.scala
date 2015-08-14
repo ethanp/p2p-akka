@@ -119,7 +119,8 @@ class ChunkDLInvalidDataTest extends BaseChunkDLTester {
                 expectSoon {
                     ChunkDLFailed(
                         chunkIdx = chunkIdx,
-                        peerPath = self
+                        peerPath = self,
+                        cause = InvalidData
                     )
                 }
             }
@@ -137,7 +138,7 @@ class ChunkDLTimeoutTest extends BaseChunkDLTester {
             "notify parent of failure and peer" in {
                 // not being in an "in" block made this test fail?!
                 within(cDlPtr.receiveTimeout + 2.seconds) {
-                    expectMsg(ChunkDLFailed(0, self))
+                    expectMsg(ChunkDLFailed(0, self, TransferTimeout))
                 }
                 cDlPtr.piecesRcvd shouldEqual Array(true, false, false)
             }

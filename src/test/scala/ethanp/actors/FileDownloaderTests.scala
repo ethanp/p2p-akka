@@ -226,7 +226,7 @@ class FileDownloaderTestNotFullyAvailable extends BaseTester {
                             expectNoMsg()
                         }
                         within(2 seconds) {
-                            expectMsg(NoProgress)
+                            expectMsg(TransferTimeout)
                         }
                     }
                     assert(true)
