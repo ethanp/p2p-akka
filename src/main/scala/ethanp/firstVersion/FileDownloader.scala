@@ -27,6 +27,7 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
         context stop self
     }
 
+    var listeners = Set(context.parent)
 
     /* UTILITY METHODS */
 
@@ -132,14 +133,13 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
 
     /* speed calculations */
     var bytesDLedPastSecond = 0
-    val speedometer = context.system.scheduler.schedule(1 second, 1 second) {
+    val speedometer = context.system.scheduler.schedule(initialDelay = 1 second, interval = 1 second) {
         bytesDLedPastSecond = 0
     }
 
     override def receive: Actor.Receive = LoggingReceive {
 
-        case ReceiveTimeout =>
-            context.parent ! TransferTimeout
+        case ReceiveTimeout => listeners foreach (_ ! TransferTimeout)
 
         case ChunkComplete(idx) =>
             context.setReceiveTimeout(progressTimeout)
@@ -161,11 +161,10 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
          * This comes from this node's Client actor who wants to know how much of the file is complete.
          * Tell her we have everything, except for the incompleteChunks.
          */
-        case Ping(abbrev) =>
-            if (abbrev == abbreviation) {
-                val avblChunks: BitSet = fullMutableBitSet &~ incompleteChunks
-                sender ! avblChunks
-            }
+        case Ping(abbrev) => if (abbrev == abbreviation) {
+            val avblChunks: BitSet = fullMutableBitSet &~ incompleteChunks
+            sender ! avblChunks
+        }
 
         case Seeding =>
             liveSeeders += Seeder(sender())
@@ -179,7 +178,7 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
                This would be a "push" model, though of course we could also use a "pull" model...
                 I think that might be more difficult to implement but also more efficient
              */
-            liveLeechers += Leecher(sender(), fullMutableBitSet & avblty) /* the & is to convert immutable -> mutable */
+            liveLeechers += Leecher(fullMutableBitSet & avblty, sender()) /* the & is to convert immutable -> mutable */
             attemptChunkDownload()
     }
 }

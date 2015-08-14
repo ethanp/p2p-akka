@@ -55,19 +55,18 @@ class FileDownloaderTestLiveAndDeadSeedersAndLeechers extends BaseTester {
                 assert(fDlPtr.liveSeederRefs forall liveSeeders.contains)
             }
             "know avbl of leechers" in {
-                // test file has "3" chunks
+                // test file has "3" chunks (test doesn't rely on that)
 
-                // set up
+                /* inform it of avbl of leechers */
                 var avbl = new mutable.BitSet(fileInfo.numChunks)
-                for ((leecher, idx) <- liveLeechers.zipWithIndex) {
+                for ((leecher, idx) ← liveLeechers.zipWithIndex) {
                     fDlRef.tell(Leeching((avbl += idx).toImmutable), leecher)
                 }
 
-                // verify
+                /* check if it understood */
                 avbl = new mutable.BitSet(fileInfo.numChunks)
-                for ((leecher, idx) <- liveLeechers.zipWithIndex) {
-                    avbl += idx
-                    fDlPtr.liveLeechers should contain (Leecher(leecher, avbl))
+                for ((leecher, idx) ← liveLeechers.zipWithIndex) {
+                    fDlPtr.liveLeechers should contain (Leecher(avbl += idx, leecher))
                 }
 
             }
@@ -87,8 +86,9 @@ class FileDownloaderTestLiveAndDeadSeedersAndLeechers extends BaseTester {
         }
 
         "completing download" should {
-            "check off chunks as they arrive and inform `parent` of download success" in {
-                for (i <- 0 until fileInfo.numChunks) {
+            "check off chunks as they arrive in random order, and inform `parent` of download success" in {
+                val shuffledIdxs = util.Random.shuffle(Vector(0 until fileInfo.numChunks:_*))
+                for (i ← shuffledIdxs) {
                     fDlRef ! ChunkComplete(i)
                 }
                 expectSoon {
@@ -102,10 +102,13 @@ class FileDownloaderTestJustEnoughLeechers extends BaseTester {
 
     import inputTextP2P.fileInfo
 
-    "there are only other leechers" when {
+    "a FileDownloader" when {
         "the full file is barely available" when {
 
-            val leechers = (1 to fileInfo.numChunks).map(i => system.actorOf(Props(classOf[ForwardingActor], self), "part2-"+i)).toSet
+            val leechers = (1 to fileInfo.numChunks).toSet map {
+                i: Int => system.actorOf(Props(classOf[ForwardingActor], self), "part2-"+i)
+            }
+
             val dlDir = new File("test_downloads")
             dlDir.deleteOnExit()
 
@@ -122,39 +125,36 @@ class FileDownloaderTestJustEnoughLeechers extends BaseTester {
             }
             "getting chunk availabilities" should {
                 "know avbl of leechers" in {
-                    // test file has "3" chunks
+                    /* test file has as many chunks as there are leechers */
 
-                    // set up
-                    var avbl = new mutable.BitSet(fileInfo.numChunks)
+                    /* for eg. 3 chunks, we should have the following leechers
+                     *
+                     *      [1, 0, 0]
+                     *      [0, 1, 0]
+                     *      [0, 0, 1]
+                     *
+                     * this is what was meant by "just enough" in this test's title
+                     */
                     var expectedLeechers = List.empty[Leecher]
-                    for ((leecher, idx) <- leechers.zipWithIndex) {
-                        if (idx > 0) avbl -= idx-1
-                        fDlRef.tell(Leeching((avbl += idx).toImmutable), leecher)
-                        expectedLeechers ::= Leecher(leecher, fDlPtr.fullMutableBitSet & avbl)
+                    for ((leecher, idx) ← leechers.zipWithIndex) {
+                        val mutableAvbl = new mutable.BitSet(fileInfo.numChunks) + idx
+                        val immutableAvbl = mutableAvbl.toImmutable
+
+                        fDlRef.tell(Leeching(immutableAvbl), leecher)
+                        expectedLeechers ::= Leecher(mutableAvbl, leecher)
                     }
 
                     // trust, but verify
                     fDlPtr.liveLeechers shouldEqual expectedLeechers.toSet
                 }
-
-
                 "spawn the first three chunk downloaders" in {
                     val numConcurrentDLs = Seq(fDlPtr.maxConcurrentChunks, leechers.size).min
                     fDlPtr.chunkDownloaders should have size numConcurrentDLs
                     quickly {
-                        for (i ← 1 to fileInfo.numChunks) {
+                        for (i ← 1 to numConcurrentDLs) {
                             expectMsgClass(classOf[ChunkRequest])
                         }
                     }
-                }
-            }
-
-            "completing download" should {
-                "check off chunks as they arrive and inform `parent` of download success" in {
-                    for (i <- 0 until fileInfo.numChunks) {
-                        fDlRef ! ChunkComplete(i)
-                    }
-                    expectSoon(DownloadSuccess(fileInfo.filename))
                 }
             }
         }
@@ -165,14 +165,23 @@ class FileDownloaderTestNotFullyAvailable extends BaseTester {
 
     import inputTextP2P.fileInfo
 
-    "there are only other leechers" when {
-        "the full file is not available" when {
+    "a FileDownloader" when {
+        "the full file is not fully available" when {
 
-            val leechers = (1 to fileInfo.numChunks-1).map(i => system.actorOf(Props(classOf[ForwardingActor], self), "part2-"+i)).toSet
+            val availableChunks = 0 until fileInfo.numChunks - 1
+
+            /* there are not as many Leechers as Chunks to be downloaded */
+            val leechers = availableChunks.toSet map {
+                i: Int => system.actorOf(Props(classOf[ForwardingActor], self), "part2-"+i)
+            }
+
             val dlDir = new File("test_downloads")
+
+            // Requests that the file or directory denoted by this abstract
+            // pathname be deleted when the virtual machine terminates.
             dlDir.deleteOnExit()
 
-            val ftd = FileToDownload(fileInfo, Set.empty, leechers)
+            val ftd = FileToDownload(fileInfo, seeders = Set.empty, leechers = leechers)
             val fDlRef = TestActorRef(Props(classOf[FileDownloader], ftd, dlDir), self, "fdl-3")
             val fDlPtr: FileDownloader = fDlRef.underlyingActor
 
@@ -180,54 +189,58 @@ class FileDownloaderTestNotFullyAvailable extends BaseTester {
             fDlPtr.progressTimeout = 2 seconds
 
             "first starting up" should {
-                "check which peers are alive" in {
+                "check status of all potential peers" in {
                     quickly {
                         expectNOf(leechers.size, Ping(fileInfo.abbreviation))
                     }
                 }
             }
+
+            val s = Seq(availableChunks.size, fDlPtr.maxConcurrentChunks).min
             "getting chunk availabilities" should {
                 "know avbl of leechers" in {
-                    // test file has "3" chunks
+                    // test file has "3" chunks, though test doesn't rely on that
 
-                    // set up
-                    var avbl = new mutable.BitSet(fileInfo.numChunks)
-                    for ((leecher, idx) <- leechers.zipWithIndex) {
-                        if (idx > 0) avbl -= idx-1
-                        fDlRef.tell(Leeching((avbl += idx).toImmutable), leecher)
+                    /* each Leecher has only the chunk corresponding to her idx */
+                    for ((leecher, idx) ← leechers.zipWithIndex) {
+                        val avbl = BitSet(fileInfo.numChunks) + idx
+                        fDlRef.tell(Leeching(avbl), leecher)
                     }
 
-                    // verify
-                    avbl = new mutable.BitSet(fileInfo.numChunks)
-                    for ((leecher, idx) <- leechers.zipWithIndex) {
-                        if (idx > 0) avbl -= idx-1
-                        fDlPtr.liveLeechers should contain (Leecher(leecher, avbl += idx))
+                    // verify (note: we're not *waiting* for the message to travel)
+                    for ((leecher, idx) ← leechers.zipWithIndex) {
+                        val avbl = new mutable.BitSet(fileInfo.numChunks) + idx
+                        fDlPtr.liveLeechers should contain (Leecher(avbl, leecher))
                     }
-                    fDlPtr.availableChunks shouldEqual BitSet(0 until fileInfo.numChunks-1 :_*)
+                    fDlPtr.availableChunks shouldEqual BitSet(availableChunks:_*)
                 }
                 "spawn just the two chunk downloaders" in {
-                    val s = Seq(fileInfo.numChunks-1, fDlPtr.maxConcurrentChunks).min
                     fDlPtr.chunkDownloaders should have size s
                     quickly {
-                        for (i ← 1 to fileInfo.numChunks-1) {
-                            expectMsgClass(classOf[ChunkRequest])
+                        for (i ← 0 until s) {
+                            expectMsgType[ChunkRequest]
                         }
                     }
                 }
             }
             "continuing download" should {
                 // we get everything we expect to receive from peers
-                for (i <- 0 until fileInfo.numChunks-1) {
+                for (i ← availableChunks) {
                     fDlRef ! ChunkComplete(i)
                 }
-                "eventually start receiving 'NothingDoing' status from FDLr" in {
-                    for (i <- 1 to 2) {
-                        within(fDlPtr.progressTimeout - 1.second) {
-                            expectNoMsg()
+                "receive the rest of the ChunkRequests" in {
+                    for (i ← s to availableChunks.max) {
+                        within(200 milliseconds) {
+                            expectMsgType[ChunkRequest]
                         }
-                        within(2 seconds) {
-                            expectMsg(TransferTimeout)
-                        }
+                    }
+                }
+                "eventually receive 'TransferTimeout' status from FDLr" in {
+                    within(fDlPtr.progressTimeout - 1.second) {
+                        expectNoMsg()
+                    }
+                    within(2 seconds) {
+                        expectMsg(TransferTimeout)
                     }
                     assert(true)
                 }

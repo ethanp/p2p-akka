@@ -38,6 +38,6 @@ case class Seeder(actorRef: ActorRef) extends FilePeer(actorRef) {
     override def hasChunk(idx: Int): Boolean = true
 }
 
-case class Leecher(actorRef: ActorRef, avbl: mutable.BitSet) extends FilePeer(actorRef) {
+case class Leecher(avbl: mutable.BitSet, actorRef: ActorRef) extends FilePeer(actorRef) {
     override def hasChunk(idx: Int) = avbl contains idx
 }
