@@ -41,6 +41,11 @@ class ChunkDownloader(p2PFile: LocalP2PFile, chunkIdx: Int, peerRef: ActorRef) e
             out.seek(chunkIdx * BYTES_PER_CHUNK)
             out.write(chunkData)
             out.close()
+            // before: chunk was unavailable
+            if (!p2PFile.unavbl(chunkIdx))
+                throw new IllegalStateException()
+            // after: it is *not* unavailable (i.e. available; heh.)
+            p2PFile.unavbl.remove(chunkIdx)
             true
         }
         else {

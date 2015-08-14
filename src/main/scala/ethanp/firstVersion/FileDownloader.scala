@@ -94,10 +94,7 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
     val chunkDownloaders = mutable.Set.empty[ActorRef]
 
     /** check-lists of what needs to be done */
-    // TODO this looks like a bug because the p2PFile already has a unavblty list, isn't this the EXACT same thing?
-    // and there may be instances in the code here wherein one is being updated and the other not...
-    // so I think the `incompleteChunks` variable should be removed.
-    val incompleteChunks = fullMutableBitSet // starts out as all ones
+    def incompleteChunks = p2PFile.unavbl
     val notStartedChunks = fullMutableBitSet
 
     def attemptChunkDownload(): Unit = {
@@ -145,10 +142,10 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
             context.parent ! TransferTimeout
 
         case ChunkComplete(idx) =>
-            incompleteChunks.remove(idx)
             context.setReceiveTimeout(progressTimeout)
             attemptChunkDownload()
             // TODO publish completion to EventBus
+            // so that interested peers know we now have this chunk
 
         // this is (supposedly) received *after* the ChunkDownloader tried retrying a few times
         case ChunkDLFailed(idx, peerRef, cause) =>
@@ -160,8 +157,15 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
             bytesDLedPastSecond += numBytes
             // TODO update the peer-specific transfer speed (for dl priority) on the FilePeer object
 
-        // this comes from this node's Client actor who wants to know how much of the file is complete
-        case Ping(abbrev) => if (abbrev == abbreviation) sender ! (fullMutableBitSet &~ incompleteChunks).toImmutable
+        /**
+         * This comes from this node's Client actor who wants to know how much of the file is complete.
+         * Tell her we have everything, except for the incompleteChunks.
+         */
+        case Ping(abbrev) =>
+            if (abbrev == abbreviation) {
+                val avblChunks: BitSet = fullMutableBitSet &~ incompleteChunks
+                sender ! avblChunks
+            }
 
         case Seeding =>
             liveSeeders += Seeder(sender())
