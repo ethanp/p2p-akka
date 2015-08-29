@@ -1,4 +1,4 @@
-package ethanp.firstVersion
+package ethanp.backend.client
 
 import akka.actor.{Actor, ActorLogging, ActorRef}
 import ethanp.file.FileToDownload

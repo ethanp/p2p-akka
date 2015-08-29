@@ -1,8 +1,9 @@
-package ethanp.firstVersion
+package ethanp.backend
 
 import java.util.Scanner
 
-import akka.actor.{Props, ActorSystem, ActorRef}
+import akka.actor.{ActorRef, ActorSystem, Props}
+import ethanp.backend.client._
 
 import scala.collection.mutable
 

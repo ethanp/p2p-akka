@@ -1,9 +1,10 @@
-package ethanp.firstVersion
+package ethanp.backend
 
 import java.io.File
 
 import akka.actor._
 import akka.event.LoggingReceive
+import ethanp.backend.client._
 import ethanp.file.{FileToDownload, LocalP2PFile}
 
 import scala.collection.{BitSet, mutable}

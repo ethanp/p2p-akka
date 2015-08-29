@@ -1,4 +1,4 @@
-package ethanp.firstVersion
+package ethanp.backend
 
 import java.io.File
 
@@ -6,6 +6,7 @@ import akka.actor._
 import akka.contrib.throttle.Throttler._
 import akka.event.LoggingReceive
 import akka.pattern.ask
+import ethanp.backend.client._
 import ethanp.file.{FileInfo, FileToDownload, LocalP2PFile, Sha2}
 
 import scala.collection.immutable.BitSet

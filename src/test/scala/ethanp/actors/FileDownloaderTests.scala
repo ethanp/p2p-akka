@@ -5,8 +5,9 @@ import java.io.File
 import akka.actor.Props
 import akka.testkit.TestActorRef
 import ethanp.actors.BaseTester.ForwardingActor
+import ethanp.backend.{Leecher, FileDownloader}
 import ethanp.file.FileToDownload
-import ethanp.firstVersion._
+import ethanp.backend.client._
 
 import scala.collection.{BitSet, mutable}
 import scala.concurrent.duration._

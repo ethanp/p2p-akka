@@ -1,9 +1,10 @@
-package ethanp.firstVersion
+package ethanp.backend
 
 import java.io.RandomAccessFile
 
 import akka.actor._
 import akka.event.LoggingReceive
+import ethanp.backend.client._
 import ethanp.file.LocalP2PFile._
 import ethanp.file.{LocalP2PFile, Sha2}
 

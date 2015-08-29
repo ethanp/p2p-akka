@@ -1,4 +1,4 @@
-package ethanp.firstVersion
+package ethanp.backend.client
 
 import akka.actor.ActorRef
 import akka.contrib.throttle.Throttler.Rate

@@ -4,8 +4,9 @@ import java.io.{File, FileInputStream}
 
 import akka.actor.Props
 import akka.testkit.TestActorRef
+import ethanp.backend.ChunkDownloader
 import ethanp.file.LocalP2PFile
-import ethanp.firstVersion._
+import ethanp.backend.client._
 
 import scala.concurrent.duration._
 

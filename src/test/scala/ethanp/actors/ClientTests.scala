@@ -1,7 +1,8 @@
 package ethanp.actors
 
 import akka.testkit.TestActorRef
-import ethanp.firstVersion._
+import ethanp.backend.client._
+import ethanp.backend.Client
 
 import scala.concurrent.duration._
 import scala.language.postfixOps

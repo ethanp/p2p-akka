@@ -1,4 +1,4 @@
-package ethanp.firstVersion
+package ethanp.backend
 
 import akka.actor.ActorRef
 

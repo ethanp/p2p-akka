@@ -4,8 +4,9 @@ import akka.actor.{ActorRef, Props}
 import akka.testkit.TestActorRef
 import akka.contrib.throttle.Throttler._
 import ethanp.actors.BaseTester
+import ethanp.backend.Client
 import ethanp.file.{FileToDownload, LocalP2PFile}
-import ethanp.firstVersion._
+import ethanp.backend.client._
 import org.scalatest.Suites
 
 import scala.collection.immutable.IndexedSeq

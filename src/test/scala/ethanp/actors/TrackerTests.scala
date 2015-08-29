@@ -2,7 +2,7 @@ package ethanp.actors
 
 import akka.testkit.TestActorRef
 import ethanp.file.FileToDownload
-import ethanp.firstVersion._
+import ethanp.backend.client._
 
 import scala.language.postfixOps
 
