@@ -61,7 +61,7 @@ class SingleDL extends DLTests {
             val clients = makeFastClients(3)
             val filename = "Test1.txt"
             val Loc(from, to) = fromTo(filename)
-            val info = LocalP2PFile.loadFile(from.toFile, filename).fileInfo
+            val info = LocalP2PFile.loadFile(filename, from.toFile).fileInfo
             to.toFile.delete()
 
             /* 'tail' clients own the file */
@@ -102,7 +102,7 @@ class SingleClientMultiDL extends DLTests {
                 clients.head.underlyingActor.listeners += self
 
                 // client init's download
-                val info = LocalP2PFile.loadFile(loc.from, filename).fileInfo
+                val info = LocalP2PFile.loadFile(filename, loc.from).fileInfo
                 clients.head ! FileToDownload(info, clients.tail.toSet, Set.empty)
             }
 
@@ -142,7 +142,7 @@ class MultiClientMultiDL extends DLTests {
                 peers.foreach(_.underlyingActor.loadFile(from, filename))
 
                 // get file download metadata
-                val info = LocalP2PFile.loadFile(from, filename).fileInfo
+                val info = LocalP2PFile.loadFile(filename, from).fileInfo
 
                 // all clients download all the files
                 clients.zip(clientLocs).foreach { case (client, clientLoc) =>

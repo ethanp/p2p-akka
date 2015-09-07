@@ -26,42 +26,60 @@ class ChunkDownloader(p2PFile: LocalP2PFile, chunkIdx: Int, peerRef: ActorRef) e
     val chunkData = new Array[Byte](p2PFile.fileInfo numBytesInChunk chunkIdx)
     var listeners = Set(context.parent)
 
-    /* an IOException here will crash the program. I don't really have any better ideas...retry?
+    /**
+     * Write the downloaded Chunk to the local filesystem iff it hashes correctly.
+     *
+     * Note: An IOException here will crash the program. I don't really have any better ideas...retry?
      * I'll address it if it comes up
      */
     def writeChunk(): Boolean = {
-        if (Sha2.hashOf(chunkData) == p2PFile.fileInfo.chunkHashes(chunkIdx)) {
-            log.warning(s"writing out all ${chunkData.length} bytes of chunk $chunkIdx")
-            /* use rwd or rws to write synchronously. until I have (hard to debug) issues, I'm going
-             * with writing asynchronously */
-            // this is probably my own file descriptor, so other threads can't seek me somewhere else
-            // before I write out the data
+
+        // precondition: data shouldn't already be there
+        if (p2PFile hasDataForChunk chunkIdx)
+            throw new IllegalStateException()
+
+        if ((Sha2 hashOf chunkData) == p2PFile.fileInfo.chunkHashes(chunkIdx)) {
+            log.debug(s"writing out all ${chunkData.length} bytes of chunk $chunkIdx")
+
+            /*
+             * Use rwd or rws to write synchronously.
+             * Until I have (hard to debug) issues, I'm going with writing asynchronously.
+             *
+             * I'm assuming this creates its own file descriptor, so other threads can't
+             * this guy somewhere else before I write out the data here
+             */
             val out = new RandomAccessFile(p2PFile.file, "rw")
-            // Setting offset beyond end of file does not change file length.
-            // File length changes by writing after offset beyond end of file.
+
+            // Setting offset beyond end-of-file does not change the file length.
+            // Writing beyond end-of-file does change the file length.
             out.seek(chunkIdx * BYTES_PER_CHUNK)
             out.write(chunkData)
             out.close()
-            // before: chunk was unavailable
-            if (!p2PFile.unavbl(chunkIdx))
-                throw new IllegalStateException()
-            // after: it is *not* unavailable (i.e. available; heh.)
-            p2PFile.unavbl.remove(chunkIdx)
+
+            p2PFile.unavailableChunkIndexes.remove(chunkIdx)
             true
         }
         else {
-            log error s"$this rcvd chunk that didn't hash correctly"
+            log error s"$this rcvd chunk data that didn't hash correctly"
             false
         }
     }
 
+    /**
+     * Upon booting up, the ChunkDownloader will request the Chunk from the Peer
+     * and set a Timeout for the Peer's response.
+     */
     override def preStart(): Unit = {
+
         /* The docs say:
+         *
          *      Once set, the receive timeout stays in effect (i.e. continues firing repeatedly
          *      after inactivity periods). Pass in `Duration.Undefined` to switch off this feature.
-         * In another word, I guess I don't need to set another timeout after every message.
+         *
+         * This means we don't need to set another timeout after every message.
          */
         context.setReceiveTimeout(receiveTimeout)
+
         peerRef ! ChunkRequest(p2PFile.fileInfo.abbreviation, chunkIdx)
     }
 

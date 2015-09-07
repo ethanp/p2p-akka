@@ -34,7 +34,7 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
 
     def fullMutableBitSet = mutable.BitSet(0 until numChunks: _*)
     def emptyMutableBitSet = new mutable.BitSet(numChunks)
-    def nonResponsiveDownloadees = potentialDownloadees -- liveSeederRefs -- liveLeecherRefs
+    def peersWhoHaventResponded = potentialDownloadees -- liveSeederRefs -- liveLeecherRefs
     def liveSeederRefs = liveSeeders map (_.ref)
     def liveLeecherRefs = liveLeechers map (_.ref)
 
@@ -81,7 +81,7 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
      */
     override def preStart(): Unit = potentialDownloadees foreach (_ ! Ping(abbreviation))
 
-    // TODO this should de-register me from all the event buses I'm subscribed to
+    // SOMEDAY this should de-register me from all the event buses I'm subscribed to
     override def postStop(): Unit = () // this is the default
 
     /* FIELDS */
@@ -91,7 +91,7 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
     /** peers we've timed-out upon recently */
     var quarantine = Set.empty[ActorRef]
 
-    // TODO should updated periodically after new queries of the Trackers
+    // SOMEDAY should updated periodically after new queries of the Trackers
     var potentialDownloadees: Set[ActorRef] = fileDLing.seeders ++ fileDLing.leechers
 
     /** added to by responses from the peers when they get Ping'd */
@@ -102,7 +102,7 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
     val chunkDownloaders = mutable.Set.empty[ActorRef]
 
     /** check-lists of what needs to be done */
-    def incompleteChunks = p2PFile.unavbl
+    def incompleteChunks = p2PFile.unavailableChunkIndexes
     val notStartedChunks = fullMutableBitSet
 
     def attemptChunkDownload(): Unit = {
@@ -116,7 +116,7 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
                     val peer = nextToDLFrom(nextIdx)
                     chunkDownloaders += spawnChunkDownloader(chunkIdx = nextIdx, peerRef = peer.ref)
                 case None =>
-                    // TODO I need to wait for an event published on the bus that a chunk has
+                    // SOMEDAY I need to wait for an event published on the bus that a chunk has
                     // been downloaded and ask trackers for new people, and ping the dead people
                     // again periodically to see if they've woken up
                     log warning "none of the chunks remaining are available :("
@@ -151,18 +151,18 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
         case ChunkComplete(idx) =>
             context.setReceiveTimeout(progressTimeout)
             attemptChunkDownload()
-            // TODO publish completion to EventBus
+            // SOMEDAY publish completion to EventBus
             // so that interested peers know we now have this chunk
 
         // this is (supposedly) received *after* the ChunkDownloader tried retrying a few times
         case ChunkDLFailed(idx, peerRef, cause) =>
-            // TODO update the FilePeer object
-            // TODO then try again iff it was just a timeout
+            // SOMEDAY update the FilePeer object
+            // SOMEDAY then try again iff it was just a timeout
 
         // comes from ChunkDownloader
         case DownloadSpeed(numBytes) =>
             bytesDLedPastSecond += numBytes
-            // TODO update the peer-specific transfer speed (for dl priority) on the FilePeer object
+            // SOMEDAY update the peer-specific transfer speed (for dl priority) on the FilePeer object
 
         /**
          * This comes from this node's Client actor who wants to know how much of the file is complete.
@@ -178,7 +178,7 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
             attemptChunkDownload()
 
         case Leeching(avblty) =>
-            /* TODO use the event bus to subscribe to leecher's avblty update stream
+            /* SOMEDAY use the event bus to subscribe to leecher's avblty update stream
                 val bus = ActorEventBus()       // or however you do it
                 bus.subscribe(this, sender())   // or however you do it
 

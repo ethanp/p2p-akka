@@ -21,7 +21,7 @@ class P2PFileTests extends BaseTester {
                 chunkHashes = Vector(Sha2("fND18YuOoWW8VoyGYs0sIVGXbaneeTGKPXVpgNLd9zQ=")),
                 fileLength = 53),
                 file = file,
-                unavbl = new mutable.BitSet(numChunks))
+                unavailableChunkIndexes = new mutable.BitSet(numChunks))
             )
         }
     }

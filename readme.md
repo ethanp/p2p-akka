@@ -20,7 +20,11 @@ Much simplified version of BitTorrent.
 
 I am using TDD, please run the `scalatest` tests in the `tests` directory to
 verify that your dependencies are there and everything is up and running
-properly.
+properly by running
+
+```
+$ sbt test
+```
 
 
 #### Next-Level Tests (TODO)
