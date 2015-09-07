@@ -22,10 +22,25 @@ I am using TDD, please run the `scalatest` tests in the `tests` directory to
 verify that your dependencies are there and everything is up and running
 properly.
 
+
+#### Next-Level Tests (TODO)
+
+N.B.: These should use the `Client`'s configurable `uploadLimit` (already 
+implemented) to make it easier to investigate what exactly is going on.
+
+1. 2 peers have file but 1 *dies* part-way through transfer
+2. 1 of two peers sends corrupted chunk, other does rest of file
+3. Download from peer who doesn't have whole file
+4. Download from peer who comes online after transfer starts
+5. CLI-based progress bar by setting the `max-upload-speed` to e.g.
+   2-bytes-per-second
+
+
 ### Actor Structure
 
-* `Tracker` --- waits for people to say they're seeding, or to ask who's
-  seeding
+* `Tracker` --- responds to 
+    1. requests to seed
+    2. requests for seeders
 * `Client`
     * converts local available files into hashes and sends them to Tracker
     * Spawns a `ChunkReplyer` upon chunk requests from other clients
@@ -35,7 +50,7 @@ properly.
     * Spawns up to 4 concurrent `ChunkDownloaders`
     * Blacklists peers and retries chunk-downloads when they fail (_untested_)
 * `ChunkDownloader` --- requests a specific chunk of a file from a peer
-    * Recieves the chunk in "pieces" (of the chunk)
+    * Receives the chunk in "pieces" (of the chunk)
     * Upon receiving a complete "piece", the `FileDownloader` is informed, so
       that it can update the current download speed, which is printed every
       second
@@ -44,18 +59,6 @@ properly.
       it can choose a new chunk to download, and a peer to download it from,
       and spawn a new `ChunkDownloader`
 
-#### Next-Level Tests
-
-These should use the `Client`'s configurable `uploadLimit` to make it easier to
-investigate what exactly is going on.
-
-1. 2 peers have file but 1 *dies* part-way through transfer
-2. 1 of two peers sends corrupted chunk, other does rest of file
-3. Download from peer who doesn't have whole file
-4. Download from peer who comes online after transfer starts
-5. CLI-based progress bar by setting the `max-upload-speed` to e.g.
-   2-bytes-per-second
-
 ### Eventually...
 
 1. DHT for peer discovery
@@ -63,11 +66,11 @@ investigate what exactly is going on.
 
 ### (OLD) Example usage
 
-**This probably doesn't work anymore as I've moved to TDD. _Please just run the
-test cases instead._ There will be a new version of the *example usage* once I
-get a better command-line interface running.**
+**This probably doesn't work anymore as I've moved to TDD. _Run the
+test cases instead._** There will be a new version of the *example usage* once I
+get a better command-line interface running.
 
-Fire it up, run "`Master.scala`" and paste the following text into your
+Fire it up, run `Master.scala` and paste the following text into your
 console. This script will transfer the textfile `testfiles/Test1.txt` from two
 simulated peers to a simulated client.
 

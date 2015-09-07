@@ -90,6 +90,12 @@ class FileDownloaderTestLiveAndDeadSeedersAndLeechers extends BaseTester {
             "check off chunks as they arrive in random order, and inform `parent` of download success" in {
                 val shuffledIdxs = util.Random.shuffle(Vector(0 until fileInfo.numChunks:_*))
                 for (i ← shuffledIdxs) {
+                    /*
+                        this is what the `ChunkDownloader` WOULD be doing,
+                        but I'M sending the `ChunkComplete`s now
+                        instead of having a `ChunkDownloader`
+                    */
+                    fDlPtr.p2PFile.unavbl.remove(i)
                     fDlRef ! ChunkComplete(i)
                 }
                 expectSoon {

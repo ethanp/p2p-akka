@@ -73,8 +73,7 @@ case class LocalP2PFile(
     fileInfo: FileInfo,
     file: File, // data loc for this file on the local file system
 
-//  TODO make sure the local file and this bitset don't end up being places of
-//  shared mutable state. done sloppily this could lead to bugs.
+//  TODO this seems like a bad idea.
     unavbl: mutable.BitSet
 )
 extends P2PFile
@@ -104,62 +103,72 @@ object LocalP2PFile {
     val BYTES_PER_CHUNK = BYTES_PER_PIECE * PIECES_PER_CHUNK
 
     /**
-     * hash the entire file without ever holding more than a single chunk in memory
+     * Create a vector of the Sha2 hashes of each Chunk of the given file,
+     * without ever holding more than a single chunk in memory.
+     *
+     * @param file the file whose Chunks to hash using Sha2
+     * @return a vector of Chunk hashes
      */
     def hashTheFile(file: File): Vector[Sha2] = {
+        var chunkHashes: mutable.MutableList[Sha2] = mutable.MutableList.empty
+        readFileByChunk(file) (
+            useFileData = (buffer, fullPortion, _) => chunkHashes += (Sha2 hashOf (buffer take fullPortion)),
+            onComplete = chunkHashes.toVector
+        )
+    }
 
-        val readArr          = new Array[Byte](BYTES_PER_CHUNK)
-        val chunkHashes      = mutable.MutableList.empty[Sha2]
-        def finalChunkHashes = chunkHashes.toVector
+    /**
+     * Reads the file chunk by chunk and executes the given callback.
+     * Returns whatever you want it to.
+     *
+     * TODO this SHOULD be a `foldFileByChunk` method that deals with an
+     *      _immutable_ input object and folds over it, which would in my
+     *      case yield the Vector[Sha2]
+     *
+     * @param useFileData what to do whenever a buffer is filled or the with the last file buffer
+     * @param onComplete what to return upon completion (lazy)
+     * @return the result of the `onComplete` callback
+     */
+    def readFileByChunk[T](file: File)(
+        useFileData : (Array[Byte], Int, Int) => Unit,
+        onComplete  : => T
+    ): T = {
+        val fileInputStream = new BufferedInputStream(new FileInputStream(file))
+        val chunkBuffer     = new Array[Byte](BYTES_PER_CHUNK)
+        var bytesRead       = -1
+        var offsetInChunk   = 0
+        var totalRead       = 0
 
-        val len       = file.length()
-        var bytesRead = 1
-        var offset    = 0
-        var totalRead = 0
+        while (totalRead < file.length()) {
 
-        def doneReading = totalRead >= len
-        def filledReadArray = offset + bytesRead == readArr.length
+            // FROM     the InputStream
+            // INTO     the `chunkBuffer`
+            // STARTING AT offset
+            // AT MOST  only the remaining bytes in the Chunk
+            // RETURNS  a non-negative integer
+            bytesRead = fileInputStream.read(chunkBuffer, offsetInChunk, BYTES_PER_CHUNK - offsetInChunk)
 
-        def updateHash(): Unit = {
-            updateWithArr(readArr)
-            offset = 0
-        }
+            totalRead += bytesRead
+            offsetInChunk += bytesRead
 
-        def updateWithArr(arr: Array[Byte]): Unit = chunkHashes += (Sha2 hashOf arr)
-
-        def readFile(fis: InputStream) {
-            while (!doneReading) {
-                bytesRead = fis.read(readArr, offset, readArr.length - offset)
-                totalRead += bytesRead
-                if (filledReadArray) updateHash()
-                else if (doneReading) updateWithArr(readArr take offset + bytesRead)
-                else offset += bytesRead
+            if (offsetInChunk == chunkBuffer.length || totalRead >= file.length()) {
+                useFileData(chunkBuffer, offsetInChunk, totalRead)
+                offsetInChunk = 0
             }
         }
-
-        def readCarefully() {
-            val fileInStream = new BufferedInputStream(new FileInputStream(file))
-            try readFile(fileInStream)
-            catch {
-                case e: Exception =>
-                    e.printStackTrace()
-                    System.exit(5)
-            }
-            finally fileInStream.close()
-        }
-
-        readCarefully()
-        finalChunkHashes
+        fileInputStream.close()
+        onComplete
     }
 
     def loadFile(path: Path, name: String): LocalP2PFile = loadFile(name, path.toString())
 
-    def loadFile(name: String, path: String): LocalP2PFile = {
-        val file = new File(path)
-        val chunkHashes = hashTheFile(file)
+
+    def loadFile(givenName: String, filePath: String): LocalP2PFile = {
+        val file = new File(filePath)
+        val chunkHashes: Vector[Sha2] = hashTheFile(file)
         LocalP2PFile(
             FileInfo(
-                name,
+                givenName,
                 chunkHashes,
                 file.length().toInt
             ),

@@ -50,8 +50,14 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
         validPeers(peerIdx)
     }
 
-    def downloadChunkFrom(chunkIdx: Int, peerRef: ActorRef): Unit = {
-        chunkDownloaders += context.actorOf(
+    /**
+     * Spawn a ChunkDownloader to download this FileDownloader's File
+     *
+     * @param chunkIdx which chunk index to download
+     * @param peerRef which ActorRef to download from
+     */
+    def spawnChunkDownloader(chunkIdx: Int, peerRef: ActorRef): ActorRef = {
+        context.actorOf(
             Props(classOf[ChunkDownloader], p2PFile, chunkIdx, peerRef),
             name = s"chunk-$chunkIdx"
         )
@@ -108,7 +114,7 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
                 case Some(nextIdx) =>
                     notStartedChunks.remove(nextIdx)
                     val peer = nextToDLFrom(nextIdx)
-                    downloadChunkFrom(nextIdx, peer.ref)
+                    chunkDownloaders += spawnChunkDownloader(chunkIdx = nextIdx, peerRef = peer.ref)
                 case None =>
                     // TODO I need to wait for an event published on the bus that a chunk has
                     // been downloaded and ask trackers for new people, and ping the dead people

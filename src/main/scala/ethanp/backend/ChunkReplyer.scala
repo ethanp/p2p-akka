@@ -3,7 +3,7 @@ package ethanp.backend
 import akka.actor.{Actor, ActorLogging, PoisonPill, Props}
 import akka.contrib.throttle.Throttler.{Rate, SetTarget}
 import akka.contrib.throttle.TimerBasedThrottler
-import ethanp.backend.client.{Piece, ReplyTo}
+import ethanp.backend.client.{ChunkSuccess, Piece, ReplyTo}
 import ethanp.file.LocalP2PFile
 
 import scala.util.{Failure, Success}
