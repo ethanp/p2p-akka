@@ -79,7 +79,7 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
      *      2. Leeching(avblty)
      *      3. PeerSideError("file with that hash not known")
      */
-    override def preStart(): Unit = potentialDownloadees foreach (_ ! Ping(abbreviation))
+    override def preStart(): Unit = potentialDownloadees foreach (_ ! GetAvblty(abbreviation))
 
     // SOMEDAY this should de-register me from all the event buses I'm subscribed to
     override def postStop(): Unit = () // this is the default
@@ -168,7 +168,7 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
          * This comes from this node's Client actor who wants to know how much of the file is complete.
          * Tell her we have everything, except for the incompleteChunks.
          */
-        case Ping(abbrev) => if (abbrev == abbreviation) {
+        case GetAvblty(abbrev) => if (abbrev == abbreviation) {
             val avblChunks: BitSet = fullMutableBitSet &~ incompleteChunks
             sender ! avblChunks
         }

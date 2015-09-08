@@ -128,6 +128,12 @@ class ChunkDLInvalidDataTest extends BaseChunkDLTester {
         }
     }
 }
+
+/**
+ * The Peer sends the first Piece of data,
+ * but never sends the second one,
+ * so we must timeout.
+ */
 class ChunkDLTimeoutTest extends BaseChunkDLTester {
     "a ChunkDownloader" when {
         "timing out on a download" should {
@@ -138,7 +144,7 @@ class ChunkDLTimeoutTest extends BaseChunkDLTester {
 
             "notify parent of failure and peer" in {
                 // not being in an "in" block made this test fail?!
-                within(cDlPtr.receiveTimeout + 2.seconds) {
+                within(cDlPtr.RECEIVE_TIMEOUT + 2.seconds) {
                     expectMsg(ChunkDLFailed(0, self, TransferTimeout))
                 }
                 cDlPtr.piecesRcvd shouldEqual Array(true, false, false)

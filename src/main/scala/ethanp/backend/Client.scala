@@ -79,14 +79,14 @@ class Client(val downloadDir: File) extends Actor with ActorLogging {
               */
             if (localAbbrevs contains infoAbbrev) {
                 val p2PFile = localFiles(localAbbrevs(infoAbbrev))
-                context.actorOf(Props(classOf[ChunkReplyer], p2PFile, uploadLimit)) ! ReplyTo(sender(), chunkIdx)
+                context.actorOf(Props(classOf[ChunkReplyer], p2PFile, uploadLimit)) ! ChunkReply(sender(), chunkIdx)
             }
             else sender ! PeerSideError("file with that hash not known")
 
         case m @ SuccessfullyAdded(filename) => listeners.foreach(_ ! m)
         case m @ DownloadSuccess(filename) => listeners.foreach(_ ! m)
 
-        case Ping(abbrev) =>
+        case GetAvblty(abbrev) =>
             import scala.concurrent.ExecutionContext.Implicits.global
 
             // Respond with if I am seeder or leecher; & if leecher which chunks I have.
@@ -100,8 +100,11 @@ class Client(val downloadDir: File) extends Actor with ActorLogging {
                 // for completion bitset and pass it to peer
                 case Some(fileDLer) =>
                     val sen = sender() // must store ref for use in async closure?
-                    val dlerBitSet = (fileDLer ? Ping(abbrev)).mapTo[BitSet]
-                    dlerBitSet onSuccess { case b => sen ! Leeching(b) }
+                    val fileDownloadersBitSet = (fileDLer ? GetAvblty(abbrev)).mapTo[BitSet]
+
+                    /* TODO Peer does not yet register the Client to be notified
+                            when new Chunks are obtained */
+                    fileDownloadersBitSet onSuccess { case avblty => sen ! Leeching(avblty) }
             }
     }
 

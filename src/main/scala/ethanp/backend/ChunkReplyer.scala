@@ -3,7 +3,7 @@ package ethanp.backend
 import akka.actor.{Actor, ActorLogging, PoisonPill, Props}
 import akka.contrib.throttle.Throttler.{Rate, SetTarget}
 import akka.contrib.throttle.TimerBasedThrottler
-import ethanp.backend.client.{ChunkSuccess, Piece, ReplyTo}
+import ethanp.backend.client.{ChunkSuccess, Piece, ChunkReply}
 import ethanp.file.LocalP2PFile
 
 import scala.util.{Failure, Success}
@@ -24,32 +24,37 @@ class ChunkReplyer(localP2PFile: LocalP2PFile, replyRate: Rate) extends Actor wi
         // don't exit or anything. just keep trucking.
     }
 
-    def sendChunk(m: ReplyTo): Unit = {
-        val piecesThisChunk = localP2PFile.fileInfo.numPiecesInChunk(m.chunkIdx)
+    /**
+     * Send the Client each Piece of the Chunk, and then a ChunkSuccess
+     *
+     * Simply give up if there's an Exception
+     *      (Client will timeout, and appropriate steps will be taken)
+     */
+    def sendChunk(reply: ChunkReply): Unit = {
+        val numPieces = localP2PFile.fileInfo.numPiecesInChunk(reply.chunkIdx)
 
-        /**
-         * FROM: http://doc.akka.io/docs/akka/snapshot/contrib/throttle.html
+        /*
+         * SOURCE: http://doc.akka.io/docs/akka/snapshot/contrib/throttle.html
          *
-         * NOTE: This could be easily changed to a single global max upload
-         *       throttle by just passing the reference to a SINGLE throttler
-         *       to each ChunkReplyer in the constructor instead of having
-         *       each ChunkReplyer create its OWN throttler. However, I think
-         *       THIS is the way µTorrent does it, so I'm doing this for now.
+         * NOTE 1: We could also make a global throttler
          *
-         * Having the Throttler be a child of this actor does not work because
-         * this actor will be dead before the throttled messages will all have
-         * been sent out.
+         * NOTE 2: Having the Throttler be a child of this actor does not work because
+         *         this actor will be dead before the throttled messages will all have
+         *         been sent out.
          */
         val uploadThrottler = context.system.actorOf(Props(classOf[TimerBasedThrottler], replyRate))
-        uploadThrottler ! SetTarget(Some(m.requester)) // NOTE: given-pattern to set attribute of remote actor
+        uploadThrottler ! SetTarget(Some(reply.requester)) // NOTE: given-pattern to set attribute of remote actor
 
-        for (piece ← 0 until piecesThisChunk) {
-            localP2PFile.getPiece(m.chunkIdx, piece) match {
-                case Success(arr) =>
-                    uploadThrottler ! Piece(arr, piece)
+        /* send each piece */
+        for (pieceIdx ← 0 until numPieces) {
+            localP2PFile.getPiece(reply.chunkIdx, pieceIdx) match {
+                case Success(pieceData) =>
+                    uploadThrottler ! Piece(pieceIdx, pieceData)
 
-                case Failure(e) =>
-                    logError(e)
+                /* TODO test this */
+                /* Give up if there's a failure */
+                case Failure(throwable) =>
+                    logError(throwable)
                     return // give up (silently) on sending chunk
             }
         }
@@ -57,7 +62,7 @@ class ChunkReplyer(localP2PFile: LocalP2PFile, replyRate: Rate) extends Actor wi
     }
 
     override def receive: Receive = {
-        case m : ReplyTo =>
+        case m : ChunkReply =>
             sendChunk(m)
             self ! PoisonPill
     }

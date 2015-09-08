@@ -16,15 +16,19 @@ import scala.concurrent.duration._
  */
 class ChunkDownloader(p2PFile: LocalP2PFile, chunkIdx: Int, peerRef: ActorRef) extends Actor with ActorLogging {
 
-    /* CONFIGURATION */
+    /* -- CONFIGURATION -- */
 
-    var receiveTimeout = 2.seconds
+    var RECEIVE_TIMEOUT = 2.seconds
 
-    /* FIELDS */
+
+    /* -- FIELDS -- */
 
     val piecesRcvd = new Array[Boolean](p2PFile.fileInfo numPiecesInChunk chunkIdx)
     val chunkData = new Array[Byte](p2PFile.fileInfo numBytesInChunk chunkIdx)
     var listeners = Set(context.parent)
+
+
+    /* -- METHODS -- */
 
     /**
      * Write the downloaded Chunk to the local filesystem iff it hashes correctly.
@@ -65,6 +69,21 @@ class ChunkDownloader(p2PFile: LocalP2PFile, chunkIdx: Int, peerRef: ActorRef) e
         }
     }
 
+    def notifyListenersAndDie(msg: ChunkStatus) {
+        listeners foreach (_ ! msg)
+        self ! PoisonPill
+    }
+    def chunkXferSuccess() = notifyListenersAndDie(ChunkComplete(chunkIdx))
+    def chunkXferFailed(cause: FailureMechanism) = notifyListenersAndDie(ChunkDLFailed(chunkIdx, peerRef, cause))
+
+    def saveData(data: Array[Byte], pieceIdx: Int) = {
+        for ((b, i) ← data.zipWithIndex) {
+            chunkData(pieceIdx * BYTES_PER_PIECE + i) = b
+        }
+    }
+
+    /* -- ACTOR BEHAVIOR -- */
+
     /**
      * Upon booting up, the ChunkDownloader will request the Chunk from the Peer
      * and set a Timeout for the Peer's response.
@@ -73,35 +92,41 @@ class ChunkDownloader(p2PFile: LocalP2PFile, chunkIdx: Int, peerRef: ActorRef) e
 
         /* The docs say:
          *
-         *      Once set, the receive timeout stays in effect (i.e. continues firing repeatedly
-         *      after inactivity periods). Pass in `Duration.Undefined` to switch off this feature.
+         *      Once set, the receive timeout stays in effect
+         *      (i.e. continues firing repeatedly after inactivity periods).
+         *      Pass in `Duration.Undefined` to switch off this feature.
          *
          * This means we don't need to set another timeout after every message.
          */
-        context.setReceiveTimeout(receiveTimeout)
+        context.setReceiveTimeout(RECEIVE_TIMEOUT)
 
         peerRef ! ChunkRequest(p2PFile.fileInfo.abbreviation, chunkIdx)
     }
 
-    def notifyListenersAndDie(msg: ChunkStatus) {
-        listeners foreach (_ ! msg)
-        self ! PoisonPill
-    }
-    def chunkXferSuccess() = notifyListenersAndDie(ChunkComplete(chunkIdx))
-    def chunkXferFailed(cause: FailureMechanism) = notifyListenersAndDie(ChunkDLFailed(chunkIdx, peerRef, cause))
 
     override def receive: Actor.Receive = LoggingReceive {
-        case Piece(data, idx) =>
-            context.parent ! DownloadSpeed(data.length)
 
-            piecesRcvd(idx) = true
-            for ((b, i) ← data.zipWithIndex) {
-                chunkData(idx*BYTES_PER_PIECE + i) = b
-            }
+        case Piece(pieceIdx, data) =>
+            listeners.foreach(_ ! DownloadSpeed(data.length))
+            piecesRcvd(pieceIdx) = true
+            saveData(data, pieceIdx)
 
-        // enabled via context.setReceiveTimeout above
-        case ReceiveTimeout => chunkXferFailed(TransferTimeout)
+        // triggered by context.setReceiveTimeout above
+        case ReceiveTimeout =>
+            chunkXferFailed(TransferTimeout)
 
+        /*
+         * According to the current [implementation of the] protocol,
+         * the Peer sends a `ChunkSuccess` after sending ALL `Piece`s belonging to `this.Chunk`.
+         *
+         * The fact that this arrives properly in-order wrt the `Piece`s is due to Akka's
+         * built-in "guaranteed FIFO-ordering on messages between 2 particular Nodes".
+         *
+         * I don't see why this would be necessary, and maybe it will cause problems, but I
+         * think it could also come in handy...
+         *  e.g. for registering callbacks somewhere onChunkSuccess?
+         * so I'm leaving it in here for now.
+         */
         case ChunkSuccess =>
             val success = writeChunk()
             if (success) chunkXferSuccess()

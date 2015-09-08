@@ -16,35 +16,39 @@ import scala.language.postfixOps
 /**
  * Ethan Petuchowski
  * 6/14/15
+ *
+ * NOTE: run ALL tests using `sbt test`
  */
 
-/** NOTE: run ALL tests using `sbt test` */
-class FileDownloaderTestLiveAndDeadSeedersAndLeechers extends BaseTester {
+class FileDownloaderTest extends BaseTester {
 
     /* LowPriorityTodo keep tests at a high level
      * to make refactoring simpler */
 
-    import inputTextP2P.fileInfo
+    val fileInfo = inputTextP2P.fileInfo
+    val downloadDir = new File(s"test_downloads-${this.getClass.getSimpleName}")
 
+    /*
+     * Requests that the file or directory denoted by this abstract
+     * pathname be deleted when the virtual machine terminates.
+     *
+     * Deletion will be attempted only for normal termination of the
+     * virtual machine, as defined by the Java Language Specification.
+     *
+     * This registration cannot be cancelled.
+     */
+    downloadDir.deleteOnExit()
+
+}
+
+class FileDownloaderTestLiveAndDeadSeedersAndLeechers extends FileDownloaderTest {
     "there are live & dead seeders & leechers" when {
-        val fwdActors = (1 to 10).map(i => system.actorOf(Props(classOf[ForwardingActor], self), "fwd-actor-" + i)).toSet
-        val (seeders, leechers) = splitAtIndex(fwdActors, 5)
+        val peers = (1 to 10).map(i => system.actorOf(Props(classOf[ForwardingActor], self), "fwd-actor-" + i)).toSet
+        val (seeders, leechers) = splitAtIndex(peers, 5)
         val (liveSeeders, deadSeeders) = splitAtIndex(seeders, 3)
         val (liveLeechers, deadLeechers) = splitAtIndex(leechers, 2)
         val livePeers = liveSeeders ++ liveLeechers
         val deadPeers = deadSeeders ++ deadLeechers
-        val downloadDir = new File("test_downloads")
-
-        /*
-         * Requests that the file or directory denoted by this abstract
-         * pathname be deleted when the virtual machine terminates.
-         *
-         * Deletion will be attempted only for normal termination of the
-         * virtual machine, as defined by the Java Language Specification.
-         *
-         * This registration cannot be cancelled.
-         */
-        downloadDir.deleteOnExit()
 
         val fileToDownload = FileToDownload(fileInfo, seeders, leechers)
         val fileDownloaderActorRef = TestActorRef(Props(classOf[FileDownloader], fileToDownload, downloadDir), self, "FileDownloaderUnderTest")
@@ -53,7 +57,7 @@ class FileDownloaderTestLiveAndDeadSeedersAndLeechers extends BaseTester {
         "first starting up" should {
             "Ping all peers to check which are alive" in {
                 quickly {
-                    expectNOf(fwdActors.size, Ping(fileInfo.abbreviation))
+                    expectNOf(peers.size, GetAvblty(fileInfo.abbreviation))
                 }
             }
         }
@@ -116,10 +120,7 @@ class FileDownloaderTestLiveAndDeadSeedersAndLeechers extends BaseTester {
         }
     }
 }
-class FileDownloaderTestJustEnoughLeechers extends BaseTester {
-
-    import inputTextP2P.fileInfo
-
+class FileDownloaderTestJustEnoughLeechers extends FileDownloaderTest {
     "a FileDownloader" when {
         "the full file is barely available" when {
 
@@ -127,17 +128,14 @@ class FileDownloaderTestJustEnoughLeechers extends BaseTester {
                 i: Int => system.actorOf(Props(classOf[ForwardingActor], self), "part2-"+i)
             }
 
-            val dlDir = new File("test_downloads")
-            dlDir.deleteOnExit()
-
             val ftd = FileToDownload(fileInfo, Set.empty, leechers)
-            val fDlRef = TestActorRef(Props(classOf[FileDownloader], ftd, dlDir), self, "fdl-2")
+            val fDlRef = TestActorRef(Props(classOf[FileDownloader], ftd, downloadDir), self, "fdl-2")
             val fDlPtr: FileDownloader = fDlRef.underlyingActor
 
             "first starting up" should {
                 "check which peers are alive" in {
                     quickly {
-                        expectNOf(leechers.size, Ping(fileInfo.abbreviation))
+                        expectNOf(leechers.size, GetAvblty(fileInfo.abbreviation))
                     }
                 }
             }
@@ -179,28 +177,19 @@ class FileDownloaderTestJustEnoughLeechers extends BaseTester {
     }
 }
 
-class FileDownloaderTestNotFullyAvailable extends BaseTester {
-
-    import inputTextP2P.fileInfo
-
+class FileDownloaderTestNotFullyAvailable extends FileDownloaderTest {
     "a FileDownloader" when {
         "the full file is not fully available" when {
 
-            val availableChunks = 0 until fileInfo.numChunks - 1
+            val availableChunksIndexes = 0 until fileInfo.numChunks - 1
 
             /* there are not as many Leechers as Chunks to be downloaded */
-            val leechers = availableChunks.toSet map {
+            val leechers = availableChunksIndexes.toSet map {
                 i: Int => system.actorOf(Props(classOf[ForwardingActor], self), "part2-"+i)
             }
 
-            val dlDir = new File("test_downloads")
-
-            // Requests that the file or directory denoted by this abstract
-            // pathname be deleted when the virtual machine terminates.
-            dlDir.deleteOnExit()
-
             val ftd = FileToDownload(fileInfo, seeders = Set.empty, leechers = leechers)
-            val fDlRef = TestActorRef(Props(classOf[FileDownloader], ftd, dlDir), self, "fdl-3")
+            val fDlRef = TestActorRef(Props(classOf[FileDownloader], ftd, downloadDir), self, "fdl-3")
             val fDlPtr: FileDownloader = fDlRef.underlyingActor
 
             // speed things up for testing purposes
@@ -209,19 +198,19 @@ class FileDownloaderTestNotFullyAvailable extends BaseTester {
             "first starting up" should {
                 "check status of all potential peers" in {
                     quickly {
-                        expectNOf(leechers.size, Ping(fileInfo.abbreviation))
+                        expectNOf(leechers.size, GetAvblty(fileInfo.abbreviation))
                     }
                 }
             }
 
-            val s = Seq(availableChunks.size, fDlPtr.maxConcurrentChunks).min
+            val numChunkDownloaders = Seq(availableChunksIndexes.size, fDlPtr.maxConcurrentChunks).min
             "getting chunk availabilities" should {
                 "know avbl of leechers" in {
                     // test file has "3" chunks, though test doesn't rely on that
 
                     /* each Leecher has only the chunk corresponding to her idx */
-                    for ((leecher, idx) ← leechers.zipWithIndex) {
-                        val avbl = BitSet(fileInfo.numChunks) + idx
+                    for ((leecher, leecherIdx) ← leechers.zipWithIndex) {
+                        val avbl = BitSet(fileInfo.numChunks) + leecherIdx
                         fDlRef.tell(Leeching(avbl), leecher)
                     }
 
@@ -230,12 +219,12 @@ class FileDownloaderTestNotFullyAvailable extends BaseTester {
                         val avbl = new mutable.BitSet(fileInfo.numChunks) + idx
                         fDlPtr.liveLeechers should contain (Leecher(avbl, leecher))
                     }
-                    fDlPtr.availableChunks shouldEqual BitSet(availableChunks:_*)
+                    fDlPtr.availableChunks shouldEqual BitSet(availableChunksIndexes:_*)
                 }
                 "spawn just the two chunk downloaders" in {
-                    fDlPtr.chunkDownloaders should have size s
+                    fDlPtr.chunkDownloaders should have size numChunkDownloaders
                     quickly {
-                        for (i ← 0 until s) {
+                        for (i ← 0 until numChunkDownloaders) {
                             expectMsgType[ChunkRequest]
                         }
                     }
@@ -243,11 +232,11 @@ class FileDownloaderTestNotFullyAvailable extends BaseTester {
             }
             "continuing download" should {
                 // we get everything we expect to receive from peers
-                for (i ← availableChunks) {
-                    fDlRef ! ChunkComplete(i)
+                for (chunkIdx ← availableChunksIndexes) {
+                    fDlRef ! ChunkComplete(chunkIdx)
                 }
                 "receive the rest of the ChunkRequests" in {
-                    for (i ← s to availableChunks.max) {
+                    for (remainingChunkIndex ← numChunkDownloaders to availableChunksIndexes.last) {
                         within(200 milliseconds) {
                             expectMsgType[ChunkRequest]
                         }
@@ -260,9 +249,18 @@ class FileDownloaderTestNotFullyAvailable extends BaseTester {
                     within(2 seconds) {
                         expectMsg(TransferTimeout)
                     }
-                    assert(true)
+                    assert(true) // bleh.
                 }
             }
         }
     }
+}
+
+/* TODO A ChunkDownloader TimesOut on its Peer.
+ *      At that point, we should remove that Peer from the livePeers list or whatever
+ *      If there are other peers, we should continue going
+ *      Otw we should `expectMsg(NoPeersAvailable)` or something like that
+ */
+class PeerTimeout extends FileDownloaderTest {
+
 }

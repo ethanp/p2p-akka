@@ -16,7 +16,6 @@ import scala.collection.mutable
 class Tracker extends Actor with ActorLogging {
     log.info(s"tracker $self starting up")
 
-    /** **ONLY** for use by Master scripter */
     val knowledgeOf = mutable.Map.empty[String, FileToDownload]
 
     // I would like to know a better way to do this while keeping things immutable
@@ -34,36 +33,36 @@ class Tracker extends Actor with ActorLogging {
             val desiredFilename = info.filename
             def hashMatches = knowledgeOf(desiredFilename).fileInfo == info
             def filenameKnown = knowledgeOf contains desiredFilename
-            def replyDifferentFileExists = sender ! TrackerSideError(s"different file named $desiredFilename already tracked")
-            def replyNoChange = sender ! TrackerSideError("already knew you are seeding this file")
-            def replySuccess = sender ! SuccessfullyAdded(desiredFilename)
-            def successfullyAddToSeeders {
+            def replyDifferentFileExists() = sender ! TrackerSideError(s"different file named $desiredFilename already tracked")
+            def replyNoChange() = sender ! TrackerSideError("already knew you are seeding this file")
+            def replySuccess() = sender ! SuccessfullyAdded(desiredFilename)
+            def successfullyAddToSeeders() {
                 addSeeder(desiredFilename, sender())
-                replySuccess
+                replySuccess()
             }
 
             if (!filenameKnown) {
                 knowledgeOf(desiredFilename) = FileToDownload(info, Set(sender()), Set.empty)
-                replySuccess
+                replySuccess()
             }
             else if (!hashMatches) {
-                replyDifferentFileExists
+                replyDifferentFileExists()
             }
             else {
                 knowledgeOf(desiredFilename) match {
                     case swarm if swarm.seeders contains sender =>
-                        replyNoChange
+                        replyNoChange()
                     case swarm if swarm.leechers contains sender =>
                         subtractLeecher(desiredFilename, sender())
-                        successfullyAddToSeeders
+                        successfullyAddToSeeders()
                     case _ =>
-                        successfullyAddToSeeders
+                        successfullyAddToSeeders()
                 }
             }
 
         case DownloadFile(filename) =>
             if (knowledgeOf contains filename) {
-                sender ! knowledgeOf(filename) // msg is of type [FileToDownload]
+                sender ! knowledgeOf(filename) // msg is of type `FileToDownload`
                 addLeecher(filename, sender())
                 if (knowledgeOf(filename).seeders contains sender)
                     subtractSeeder(filename, sender())
