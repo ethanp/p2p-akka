@@ -146,7 +146,8 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
 
     override def receive: Actor.Receive = LoggingReceive {
 
-        case ReceiveTimeout => listeners foreach (_ ! TransferTimeout)
+        case ReceiveTimeout =>
+            listeners foreach (_ ! TransferTimeout)
 
         case ChunkComplete(idx) =>
             context.setReceiveTimeout(progressTimeout)
@@ -154,10 +155,15 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
             // SOMEDAY publish completion to EventBus
             // so that interested peers know we now have this chunk
 
-        // this is (supposedly) received *after* the ChunkDownloader tried retrying a few times
-        case ChunkDLFailed(idx, peerRef, cause) =>
-            // SOMEDAY update the FilePeer object
-            // SOMEDAY then try again iff it was just a timeout
+        /**
+         * Received *after* the ChunkDownloader tried retrying a few times
+         */
+        case failureMessage @ ChunkDLFailed(idx, peerRef, cause) => cause match {
+            case TransferTimeout => listeners foreach (_ ! failureMessage)
+            case InvalidData => log.debug("ahoy!")
+        }
+
+
 
         // comes from ChunkDownloader
         case DownloadSpeed(numBytes) =>

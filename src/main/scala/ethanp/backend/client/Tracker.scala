@@ -16,14 +16,16 @@ import scala.collection.mutable
 class Tracker extends Actor with ActorLogging {
     log.info(s"tracker $self starting up")
 
+    /**
+     * Maps filenames to lists of available Seeders and Leechers
+     */
     val knowledgeOf = mutable.Map.empty[String, FileToDownload]
 
     // I would like to know a better way to do this while keeping things immutable
-    def addSeeder(filename: String, sndr: ActorRef) { knowledgeOf(filename) = knowledgeOf(filename).seed_+(sndr) }
-    def addLeecher(filename: String, sndr: ActorRef) { knowledgeOf(filename) = knowledgeOf(filename).leech_+(sndr) }
-    def subtractSeeder(filename: String, sndr: ActorRef) { knowledgeOf(filename) = knowledgeOf(filename).seed_-(sndr) }
-    def subtractLeecher(filename: String, sndr: ActorRef) { knowledgeOf(filename) = knowledgeOf(filename).leech_-(sndr) }
-
+    def addSeeder       (filename: String, sndr: ActorRef) { knowledgeOf(filename) = knowledgeOf(filename) seed_+  sndr }
+    def addLeecher      (filename: String, sndr: ActorRef) { knowledgeOf(filename) = knowledgeOf(filename) leech_+ sndr }
+    def subtractSeeder  (filename: String, sndr: ActorRef) { knowledgeOf(filename) = knowledgeOf(filename) seed_-  sndr }
+    def subtractLeecher (filename: String, sndr: ActorRef) { knowledgeOf(filename) = knowledgeOf(filename) leech_- sndr }
 
     override def receive: Receive = {
         case m: ListTracker => sender ! TrackerKnowledge(knowledgeOf.values.toList)

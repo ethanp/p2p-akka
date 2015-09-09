@@ -107,13 +107,13 @@ class ChunkDownloader(p2PFile: LocalP2PFile, chunkIdx: Int, peerRef: ActorRef) e
     override def receive: Actor.Receive = LoggingReceive {
 
         case Piece(pieceIdx, data) =>
-            listeners.foreach(_ ! DownloadSpeed(data.length))
+//            listeners.foreach(_ ! DownloadSpeed(data.length))
             piecesRcvd(pieceIdx) = true
             saveData(data, pieceIdx)
 
         // triggered by context.setReceiveTimeout above
         case ReceiveTimeout =>
-            chunkXferFailed(TransferTimeout)
+            chunkXferFailed(cause = TransferTimeout)
 
         /*
          * According to the current [implementation of the] protocol,
@@ -130,7 +130,7 @@ class ChunkDownloader(p2PFile: LocalP2PFile, chunkIdx: Int, peerRef: ActorRef) e
         case ChunkSuccess =>
             val success = writeChunk()
             if (success) chunkXferSuccess()
-            else chunkXferFailed(InvalidData)
+            else chunkXferFailed(cause = InvalidData)
 
         case AddMeAsListener =>
             listeners += sender

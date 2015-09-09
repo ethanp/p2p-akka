@@ -57,7 +57,7 @@ class ChunkDLValidDataTest extends BaseChunkDLTester {
             }
             "mark first piece received (and only it) off" in {
                 val bytes = inputTextP2P.getPiece(chunkIdx, 0).get
-                cDlRef ! Piece(bytes, 0)
+                cDlRef ! Piece(0, bytes)
                 quickly {
                     cDlPtr.piecesRcvd shouldEqual Array(true, false, false)
                 }
@@ -65,7 +65,7 @@ class ChunkDLValidDataTest extends BaseChunkDLTester {
             "mark rest of pieces off" in {
                 /* send the rest of the pieces over */
                 for (i <- 1 until cDlPtr.piecesRcvd.length)
-                    cDlRef ! Piece(inputTextP2P.getPiece(chunkIdx, i).get, i)
+                    cDlRef ! Piece(i, inputTextP2P.getPiece(chunkIdx, i).get)
                 quickly {
                     cDlPtr.piecesRcvd shouldEqual Array(true, true, true)
                 }
@@ -102,7 +102,7 @@ class ChunkDLInvalidDataTest extends BaseChunkDLTester {
             val fakeData = Array[Byte](12, 32, 42)
 
             /* send client the fake data */
-            for (i ← 0 to 2) cDlRef ! Piece(fakeData, i)
+            for (i ← 0 to 2) cDlRef ! Piece(i, fakeData)
 
             "still check off pieces received" in {
                 quickly {
@@ -140,7 +140,7 @@ class ChunkDLTimeoutTest extends BaseChunkDLTester {
             val fakeData = Array(12.toByte, 32.toByte, 42.toByte)
 
             /* send client the fake data */
-            cDlRef ! Piece(fakeData, 0)
+            cDlRef ! Piece(0, fakeData)
 
             "notify parent of failure and peer" in {
                 // not being in an "in" block made this test fail?!
