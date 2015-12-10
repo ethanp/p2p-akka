@@ -187,9 +187,6 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
             /* SOMEDAY use the event bus to subscribe to leecher's avblty update stream
                 val bus = ActorEventBus()       // or however you do it
                 bus.subscribe(this, sender())   // or however you do it
-
-               This would be a "push" model, though of course we could also use a "pull" model...
-                I think that might be more difficult to implement but also more efficient
              */
             liveLeechers += Leecher(fullMutableBitSet & avblty, sender()) /* the & is to convert immutable -> mutable */
             attemptChunkDownload()

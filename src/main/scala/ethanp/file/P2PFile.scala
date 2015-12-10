@@ -54,7 +54,9 @@ case class FileInfo(
 }
 
 /**
- * sent through akka by the Tracker, when a file is requested
+ * This this is how the Tracker responds to a file request.
+ * It informs the Client addresses of nodes that may have the file.
+ * The FileToDownload instance is IMMUTABLE, but you can do an (inefficient) copy-on-mutate.
  */
 case class FileToDownload(
     fileInfo: FileInfo,
@@ -63,9 +65,9 @@ case class FileToDownload(
 )
 extends P2PFile
 {
-    def seed_+(ref: ActorRef) = FileToDownload(fileInfo, seeders + ref, leechers)
+    def seed_+(ref: ActorRef)  = FileToDownload(fileInfo, seeders + ref, leechers)
     def leech_+(ref: ActorRef) = FileToDownload(fileInfo, seeders, leechers + ref)
-    def seed_-(ref: ActorRef) = FileToDownload(fileInfo, seeders - ref, leechers)
+    def seed_-(ref: ActorRef)  = FileToDownload(fileInfo, seeders - ref, leechers)
     def leech_-(ref: ActorRef) = FileToDownload(fileInfo, seeders, leechers - ref)
 }
 
@@ -73,7 +75,7 @@ case class LocalP2PFile(
     fileInfo: FileInfo,
     file: File, // data loc for this file on the local file system
 
-//  SOMEDAY this seems like a bad idea.
+    // SOMEDAY this just seems like an accident waiting to happen.
     unavailableChunkIndexes: mutable.BitSet
 )
 extends P2PFile

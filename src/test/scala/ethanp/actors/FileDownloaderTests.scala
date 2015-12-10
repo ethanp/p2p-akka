@@ -43,7 +43,7 @@ class FileDownloaderTest extends BaseTester {
 
 /**
  * PREFACE
- *  - Create { liveSeeders, deadSeeders, liveLeechers, deadLeechers }
+ *  - Create { 3 liveSeeders, 2 deadSeeders, 2 [sic] liveLeechers, 3 deadLeechers }
  *  - Pass them to the FileDownloader (constructor parameter)
  *
  * NARRATIVE
@@ -315,7 +315,7 @@ class PeerTimeoutWithBackups extends FileDownloaderTest {
                 "timeout on the other seeder" in {
 
                     within (fdInstance.progressTimeout + 1.second) {
-                        val possibilities = List(survivor, dier) map ( i =>
+                        val possibilities = seeders.toList map ( i =>
                             ChunkDLFailed(0, i, TransferTimeout)
                         )
                         expectMsgAnyOf(possibilities:_*)
