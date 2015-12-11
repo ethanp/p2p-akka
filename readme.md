@@ -2,17 +2,29 @@
 
 Much simplified version of BitTorrent.
 
-* A client loads a local file, converts it into a file hash, and an array of
-  "chunk hashes" (i.e. hashes of individual chunks of the file) and uploads
-  these hashes along with the file name to all "trackers" it knows
+#### Becoming a seeder
+* A client loads a local file by SHA2 hashing its contents to an array of
+  "chunk hashes" of size `BYTES_PER_CHUNK` as defined below.
+    * Currently, `chunk`s are made up of smaller `pieces`
+        * I believe this terminology is the opposite of bit-torrent's
+    * The relation is as follows
+        ```scala
+        val BYTES_PER_PIECE = 1024
+        val PIECES_PER_CHUNK = 3
+        val BYTES_PER_CHUNK = BYTES_PER_PIECE * PIECES_PER_CHUNK
+        ```
+* The client may upload these hashes along with the filename to all "trackers"
+  it knows. Once the tracker receives it,
     * If the hash matches the hash of any file the tracker currently has by
       this name, or the tracker has no file with this name, the tracker adds
       this client to the list of known "seeders" of this file
-    * If the tracker has a file with this name but a different hash, the
-      new listing will be _rejected_
+    * Otherwise, the tracker has a file with this name but a different hash,
+      and the new listing will be _rejected_
+
+#### Becoming a leecher
 * A client may request the list of seeders of a file from a tracker, and 
   receive their addresses (in the form of Akka `PeerRef`s)
-* The client initiates chunk requests from up to 4 seeders at a time
+* After The client initiates chunk requests from up to 4 seeders at a time
     * they send the client their chunks, and the client saves these chunks to
       a local file
 

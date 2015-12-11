@@ -16,18 +16,19 @@ import scala.language.postfixOps
 import scala.reflect.io.Path
 
 /**
- * Ethan Petuchowski
- * 6/4/15
- */
+  * Ethan Petuchowski
+  * 6/4/15
+  */
 class Client(val downloadDir: File) extends Actor with ActorLogging {
 
     /* FIELDS */
     val localFiles = mutable.Map.empty[String, LocalP2PFile]
     val localAbbrevs = mutable.Map.empty[Sha2, String]
-    val knownTrackers = mutable.Set.empty[ActorRef] // Note: actor refs CAN be sent to remote machine
+    val knownTrackers = mutable.Set.empty[ActorRef]
+    // Note: actor refs CAN be sent to remote machine
     implicit val timeout: akka.util.Timeout = 2.seconds
     if (!downloadDir.exists()) downloadDir.mkdir()
-    var currentDownloads = Map.empty[FileInfo, ActorRef/*FileDownloaders*/]
+    var currentDownloads = Map.empty[FileInfo, ActorRef /*FileDownloaders*/ ]
     var listeners = Set.empty[ActorRef]
     var uploadLimit: Rate = 1 msgsPerSecond
 
@@ -50,11 +51,11 @@ class Client(val downloadDir: File) extends Actor with ActorLogging {
 
         case TrackerLoc(ref) => knownTrackers += ref
 
-        case m @ ListTracker(ref) => ref ! m
+        case m@ListTracker(ref) => ref ! m
 
         case TrackerKnowledge(files) =>
             log.info(s"tracker ${sender().path} knows of the following files")
-            files.zipWithIndex foreach { case (f, i) => println(s"${i+1}: ${f.fileInfo.filename}") }
+            files.zipWithIndex foreach { case (f, i) => println(s"${i + 1}: ${f.fileInfo.filename}") }
 
         case TrackerSideError(errMsg) =>
             log.error(s"ERROR from tracker ${sender()}: $errMsg")
@@ -64,10 +65,10 @@ class Client(val downloadDir: File) extends Actor with ActorLogging {
             if (knownTrackers contains tracker) tracker ! DownloadFile(filename)
             else sender ! ClientError("I don't know that tracker")
 
-        case m : FileToDownload =>
+        case m: FileToDownload =>
             // pass args to actor constructor (runtime IllegalArgumentException if you mess it up!)
             currentDownloads += m.fileInfo -> context.actorOf(
-                Props(classOf[FileDownloader], m, downloadDir), name=s"file-${m.fileInfo.filename}")
+                Props(classOf[FileDownloader], m, downloadDir), name = s"file-${m.fileInfo.filename}")
 
         /* at this time, handling ChunkRequests is a *non-blocking* maneuver for a client */
         case ChunkRequest(infoAbbrev, chunkIdx) =>
@@ -83,8 +84,8 @@ class Client(val downloadDir: File) extends Actor with ActorLogging {
             }
             else sender ! PeerSideError("file with that hash not known")
 
-        case m @ SuccessfullyAdded(filename) => listeners.foreach(_ ! m)
-        case m @ DownloadSuccess(filename) => listeners.foreach(_ ! m)
+        case m@SuccessfullyAdded(filename) => listeners.foreach(_ ! m)
+        case m@DownloadSuccess(filename) => listeners.foreach(_ ! m)
 
         case GetAvblty(abbrev) =>
             import scala.concurrent.ExecutionContext.Implicits.global
@@ -100,7 +101,7 @@ class Client(val downloadDir: File) extends Actor with ActorLogging {
                 // for completion bitset and pass it to peer
                 case Some(fileDLer) =>
                     val sen = sender() // must store ref for use in async closure?
-                    val fileDownloadersBitSet = (fileDLer ? GetAvblty(abbrev)).mapTo[BitSet]
+                val fileDownloadersBitSet = (fileDLer ? GetAvblty(abbrev)).mapTo[BitSet]
 
                     /* TODO Peer does not yet register the Client to be notified
                             when new Chunks are obtained */
@@ -111,6 +112,7 @@ class Client(val downloadDir: File) extends Actor with ActorLogging {
 
     /* RECEIVE METHODS */
     def loadFile(path: Path, name: String): LocalP2PFile = loadFile(path.toString(), name)
+
     def loadFile(pathString: String, name: String): LocalP2PFile = {
         log.info(s"loading $pathString")
         val localFile = LocalP2PFile.loadFile(name, pathString)
@@ -121,11 +123,13 @@ class Client(val downloadDir: File) extends Actor with ActorLogging {
 }
 
 /**
- * this pattern was "recommended" in the docs
- * http://doc.akka.io/docs/akka/snapshot/scala/actors.html#recommended-practices
- */
+  * this pattern was "recommended" in the docs
+  * http://doc.akka.io/docs/akka/snapshot/scala/actors.html#recommended-practices
+  */
 object Client {
     def props = Props(new Client(new File("downloads")))
+
     def props(downloadsDir: File) = Props(new Client(downloadsDir))
+
     def props(downloadsDir: String) = Props(new Client(new File(downloadsDir)))
 }

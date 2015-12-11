@@ -2,23 +2,23 @@ package ethanp.actors
 
 import java.io.File
 
-import akka.actor.Props
+import akka.actor.{ActorRef, Props}
 import akka.testkit.TestActorRef
 import ethanp.actors.BaseTester.ForwardingActor
-import ethanp.backend.{Leecher, FileDownloader}
-import ethanp.file.FileToDownload
 import ethanp.backend.client._
+import ethanp.backend.{FileDownloader, Leecher}
+import ethanp.file.FileToDownload
 
 import scala.collection.{BitSet, mutable}
 import scala.concurrent.duration._
 import scala.language.postfixOps
 
 /**
- * Ethan Petuchowski
- * 6/14/15
- *
- * NOTE: run ALL tests using `sbt test`
- */
+  * Ethan Petuchowski
+  * 6/14/15
+  *
+  * NOTE: run ALL tests using `sbt test`
+  */
 
 class FileDownloaderTest extends BaseTester {
 
@@ -42,15 +42,15 @@ class FileDownloaderTest extends BaseTester {
 }
 
 /**
- * PREFACE
- *  - Create { 3 liveSeeders, 2 deadSeeders, 2 [sic] liveLeechers, 3 deadLeechers }
- *  - Pass them to the FileDownloader (constructor parameter)
- *
- * NARRATIVE
- *  - The FileDownloader asks for their `Avblty`s
- *       + In that way, it finds out the categories of Peers created above
- *  - It downloads the chunks, and sends its listeners a DownloadSuccess
- */
+  * PREFACE
+  * - Create { 3 liveSeeders, 2 deadSeeders, 2 [sic] liveLeechers, 3 deadLeechers }
+  * - Pass them to the FileDownloader (constructor parameter)
+  *
+  * NARRATIVE
+  * - The FileDownloader asks for their `Avblty`s
+  * + In that way, it finds out the categories of Peers created above
+  * - It downloads the chunks, and sends its listeners a DownloadSuccess
+  */
 class FileDownloaderTestLiveAndDeadSeedersAndLeechers extends FileDownloaderTest {
     "there are live & dead seeders & leechers" when {
         val peers = (1 to 10).map(i => system.actorOf(Props(classOf[ForwardingActor], self), "fwd-actor-" + i)).toSet
@@ -72,26 +72,33 @@ class FileDownloaderTestLiveAndDeadSeedersAndLeechers extends FileDownloaderTest
             }
         }
 
+        /* the seeders are supposed to respond to the above `GetAvblty` with a `Seeding` msg */
+        liveSeeders foreach (fdActorRef.tell(Seeding, _))
+
+        // test file has "3" chunks (won't work for a file with less than 3)
+        /* inform it of avbl of leechers */
+
+
+        def assignAvailabilities(f: (mutable.BitSet, ActorRef) => Any): Any = {
+            var avbl = new mutable.BitSet(fileInfo.numChunks)
+            for ((leecher, idx) ← liveLeechers.zipWithIndex) {
+                avbl += idx
+                f(avbl, leecher)
+            }
+        }
+
+        assignAvailabilities { (avbl, leecher) =>
+            fdActorRef.tell(Leeching(avbl.toImmutable), leecher)
+        }
+
         "getting chunk availabilities" should {
             "believe seeders are seeders" in {
-                liveSeeders.foreach(seeder => fdActorRef.tell(Seeding, seeder))
                 fdInstance.liveSeederRefs shouldEqual liveSeeders
             }
             "know avbl of leechers" in {
-                // test file has "3" chunks (test doesn't rely on that)
-
-                /* inform it of avbl of leechers */
-                var avbl = new mutable.BitSet(fileInfo.numChunks)
-                for ((leecher, idx) ← liveLeechers.zipWithIndex) {
-                    fdActorRef.tell(Leeching((avbl += idx).toImmutable), leecher)
+                assignAvailabilities { (avbl, leecher) =>
+                    fdInstance.liveLeechers should contain(Leecher(avbl, leecher))
                 }
-
-                /* check if it understood */
-                avbl = new mutable.BitSet(fileInfo.numChunks)
-                for ((leecher, idx) ← liveLeechers.zipWithIndex) {
-                    fdInstance.liveLeechers should contain (Leecher(avbl += idx, leecher))
-                }
-
             }
             "leave aside peers who don't respond" in {
                 fdInstance.peersWhoHaventResponded.size shouldEqual deadPeers.size
@@ -113,9 +120,14 @@ class FileDownloaderTestLiveAndDeadSeedersAndLeechers extends FileDownloaderTest
                 val shuffledIdxs = util.Random.shuffle(Vector(0 until fileInfo.numChunks: _*))
                 for (i ← shuffledIdxs) {
                     /*
-                        this is what the `ChunkDownloader` WOULD be doing,
+                        This is what the `ChunkDownloader` WOULD be doing,
                         but I'M sending the `ChunkComplete`s now
-                        instead of having a `ChunkDownloader`
+                        instead of having a `ChunkDownloader`.
+
+                        TODO is that true? If it is it represents shared mutable state
+                        between the `FileDownloader` and the `ChunkDownloader`
+
+                        TODO This should be investigated
                     */
                     fdInstance.p2PFile.unavailableChunkIndexes.remove(i)
                     fdActorRef ! ChunkComplete(i)
@@ -130,12 +142,13 @@ class FileDownloaderTestLiveAndDeadSeedersAndLeechers extends FileDownloaderTest
         }
     }
 }
+
 class FileDownloaderTestJustEnoughLeechers extends FileDownloaderTest {
     "a FileDownloader" when {
         "the full file is barely available" when {
 
             val leechers = (1 to fileInfo.numChunks).toSet map {
-                i: Int => system.actorOf(Props(classOf[ForwardingActor], self), "part2-"+i)
+                i: Int => system.actorOf(Props(classOf[ForwardingActor], self), "part2-" + i)
             }
 
             val ftd = FileToDownload(fileInfo, Set.empty, leechers)
@@ -191,7 +204,7 @@ class FileDownloaderTestNotFullyAvailable extends FileDownloaderTest {
 
             /* there are not as many Leechers as Chunks to be downloaded */
             val leechers = availableChunksIndexes.toSet map {
-                i: Int => system.actorOf(Props(classOf[ForwardingActor], self), "part2-"+i)
+                i: Int => system.actorOf(Props(classOf[ForwardingActor], self), "part2-" + i)
             }
 
             val ftd = FileToDownload(fileInfo, seeders = Set.empty, leechers = leechers)
@@ -221,9 +234,9 @@ class FileDownloaderTestNotFullyAvailable extends FileDownloaderTest {
                     // verify (note: we're not *waiting* for the message to travel)
                     for ((leecher, idx) ← leechers.zipWithIndex) {
                         val avbl = new mutable.BitSet(fileInfo.numChunks) + idx
-                        fdInstance.liveLeechers should contain (Leecher(avbl, leecher))
+                        fdInstance.liveLeechers should contain(Leecher(avbl, leecher))
                     }
-                    fdInstance.availableChunks shouldEqual BitSet(availableChunksIndexes:_*)
+                    fdInstance.availableChunks shouldEqual BitSet(availableChunksIndexes: _*)
                 }
                 "spawn just the two chunk downloaders" in {
                     fdInstance.chunkDownloaders should have size numChunkDownloaders
@@ -291,12 +304,12 @@ class PeerTimeoutWithBackups extends FileDownloaderTest {
                     val numConcurrentDLs = Set(fdInstance.maxConcurrentChunks, seeders.size).min
                     quickly {
                         // we can't count on any particular ordering of requests here
-                        val possibilities = List (
+                        val possibilities = List(
                             ChunkRequest(fileInfo.abbreviation, 0),
                             ChunkRequest(fileInfo.abbreviation, 1)
                         )
-                        expectMsgAnyOf(possibilities:_*)
-                        expectMsgAnyOf(possibilities:_*)
+                        expectMsgAnyOf(possibilities: _*)
+                        expectMsgAnyOf(possibilities: _*)
                     }
                 }
 
@@ -304,21 +317,21 @@ class PeerTimeoutWithBackups extends FileDownloaderTest {
 
                     fdActorRef ! ChunkComplete(0)
                     quickly {
-                        val possibilities = List (
+                        val possibilities = List(
                             ChunkRequest(fileInfo.abbreviation, 2),
                             ChunkRequest(fileInfo.abbreviation, 3)
                         )
-                        expectMsgAnyOf(possibilities:_*)
+                        expectMsgAnyOf(possibilities: _*)
                     }
                 }
 
                 "timeout on the other seeder" in {
 
-                    within (fdInstance.progressTimeout + 1.second) {
-                        val possibilities = seeders.toList map ( i =>
+                    within(fdInstance.progressTimeout + 1.second) {
+                        val possibilities = seeders.toList map (i =>
                             ChunkDLFailed(0, i, TransferTimeout)
-                        )
-                        expectMsgAnyOf(possibilities:_*)
+                            )
+                        expectMsgAnyOf(possibilities: _*)
                         assert(true)
                     }
                 }
@@ -330,7 +343,7 @@ class PeerTimeoutWithBackups extends FileDownloaderTest {
 
                 "finish the download using only the remaining live peer" in {
 
-//                    expectSoon(ChunkRequest(fileInfo.abbreviation, 2))
+                    //                    expectSoon(ChunkRequest(fileInfo.abbreviation, 2))
                 }
             }
         }

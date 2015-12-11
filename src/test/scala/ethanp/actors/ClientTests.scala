@@ -1,16 +1,16 @@
 package ethanp.actors
 
 import akka.testkit.TestActorRef
-import ethanp.backend.client._
 import ethanp.backend.Client
+import ethanp.backend.client._
 
 import scala.concurrent.duration._
 import scala.language.postfixOps
 
 /**
- * Ethan Petuchowski
- * 6/14/15
- */
+  * Ethan Petuchowski
+  * 6/14/15
+  */
 class ClientTests extends BaseTester {
     val clientRef = TestActorRef(Client.props).asInstanceOf[TestActorRef[Client]]
     val client = clientRef.underlyingActor

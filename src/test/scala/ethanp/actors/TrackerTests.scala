@@ -1,15 +1,15 @@
 package ethanp.actors
 
 import akka.testkit.TestActorRef
-import ethanp.file.FileToDownload
 import ethanp.backend.client._
+import ethanp.file.FileToDownload
 
 import scala.language.postfixOps
 
 /**
- * Ethan Petuchowski
- * 6/11/15
- */
+  * Ethan Petuchowski
+  * 6/11/15
+  */
 class TrackerTests extends BaseTester {
 
     // using ScalaTest's "must" would be semantically equivalent
@@ -36,29 +36,29 @@ class TrackerTests extends BaseTester {
                 trackerRef.tell(InformTrackerIHave(testTextP2P.fileInfo), bouncers.head)
                 expectMsg(SuccessfullyAdded(testTextP2P.fileInfo.filename))
             }
-            tracker knowledgeOf testText should equal (knowledge1)
+            tracker knowledgeOf testText should equal(knowledge1)
         }
         "fail when trying to add a duplicate file" in {
             quickly {
                 trackerRef.tell(InformTrackerIHave(testTextP2P.fileInfo), bouncers.head)
                 expectMsg(TrackerSideError("already knew you are seeding this file"))
             }
-            tracker knowledgeOf testText should equal (knowledge1)
+            tracker knowledgeOf testText should equal(knowledge1)
         }
         "successfully add a second seeder" in {
             quickly {
                 trackerRef.tell(InformTrackerIHave(testTextP2P.fileInfo), bouncers.last)
                 expectMsg(SuccessfullyAdded(testTextP2P.fileInfo.filename))
             }
-            tracker knowledgeOf testText should equal (knowledge2)
+            tracker knowledgeOf testText should equal(knowledge2)
         }
         "successfully add a second file" in {
             quickly {
                 trackerRef.tell(InformTrackerIHave(inputTextP2P.fileInfo), bouncers.last)
                 expectMsg(SuccessfullyAdded(inputTextP2P.fileInfo.filename))
             }
-            tracker knowledgeOf testText should equal (knowledge2)
-            tracker knowledgeOf inputText should equal (knowledge3)
+            tracker knowledgeOf testText should equal(knowledge2)
+            tracker knowledgeOf inputText should equal(knowledge3)
         }
         "fail a download request for an unknown file" in {
             quickly {
@@ -77,8 +77,8 @@ class TrackerTests extends BaseTester {
         "return its knowledge upon request" in {
             trackerRef ! ListTracker(self)
             val trackerK = waitOnA[TrackerKnowledge]
-            inside (trackerK) { case TrackerKnowledge(knowledge) =>
-                knowledge should contain only (knowledge2, knowledge4)
+            inside(trackerK) { case TrackerKnowledge(knowledge) =>
+                knowledge should contain only(knowledge2, knowledge4)
             }
         }
     }

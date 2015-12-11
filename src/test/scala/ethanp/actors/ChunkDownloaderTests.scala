@@ -5,15 +5,15 @@ import java.io.{File, FileInputStream}
 import akka.actor.Props
 import akka.testkit.TestActorRef
 import ethanp.backend.ChunkDownloader
-import ethanp.file.LocalP2PFile
 import ethanp.backend.client._
+import ethanp.file.LocalP2PFile
 
 import scala.concurrent.duration._
 
 /**
- * Created by Ethan Petuchowski on 7/2/15.
- *
- */
+  * Created by Ethan Petuchowski on 7/2/15.
+  *
+  */
 class BaseChunkDLTester extends BaseTester {
 
     /* this is where the ChunkDownloader will store the Chunks it receives */
@@ -96,6 +96,7 @@ class ChunkDLValidDataTest extends BaseChunkDLTester {
         }
     }
 }
+
 class ChunkDLInvalidDataTest extends BaseChunkDLTester {
     "a ChunkDownloader" when {
         "receiving invalid data" should {
@@ -130,10 +131,10 @@ class ChunkDLInvalidDataTest extends BaseChunkDLTester {
 }
 
 /**
- * The Peer sends the first Piece of data,
- * but never sends the second one,
- * so we must timeout.
- */
+  * The Peer sends the first Piece of data,
+  * but never sends the second one,
+  * so we must timeout.
+  */
 class ChunkDLTimeoutTest extends BaseChunkDLTester {
     "a ChunkDownloader" when {
         "timing out on a download" should {

@@ -11,10 +11,11 @@ import ethanp.file.{LocalP2PFile, Sha2}
 import scala.concurrent.duration._
 
 /**
- * Ethan Petuchowski
- * 6/6/15
- */
-class ChunkDownloader(p2PFile: LocalP2PFile, chunkIdx: Int, peerRef: ActorRef) extends Actor with ActorLogging {
+  * Ethan Petuchowski
+  * 6/6/15
+  */
+class ChunkDownloader(p2PFile: LocalP2PFile, chunkIdx: Int, peerRef: ActorRef)
+    extends Actor with ActorLogging {
 
     /* -- CONFIGURATION -- */
 
@@ -31,11 +32,11 @@ class ChunkDownloader(p2PFile: LocalP2PFile, chunkIdx: Int, peerRef: ActorRef) e
     /* -- METHODS -- */
 
     /**
-     * Write the downloaded Chunk to the local filesystem iff it hashes correctly.
-     *
-     * Note: An IOException here will crash the program. I don't really have any better ideas...retry?
-     * I'll address it if it comes up
-     */
+      * Write the downloaded Chunk to the local filesystem iff it hashes correctly.
+      *
+      * Note: An IOException here will crash the program. I don't really have any better ideas...retry?
+      * I'll address it if it comes up
+      */
     def writeChunk(): Boolean = {
 
         // precondition: data shouldn't already be there
@@ -73,7 +74,9 @@ class ChunkDownloader(p2PFile: LocalP2PFile, chunkIdx: Int, peerRef: ActorRef) e
         listeners foreach (_ ! msg)
         self ! PoisonPill
     }
+
     def chunkXferSuccess() = notifyListenersAndDie(ChunkComplete(chunkIdx))
+
     def chunkXferFailed(cause: FailureMechanism) = notifyListenersAndDie(ChunkDLFailed(chunkIdx, peerRef, cause))
 
     def saveData(data: Array[Byte], pieceIdx: Int) = {
@@ -85,9 +88,9 @@ class ChunkDownloader(p2PFile: LocalP2PFile, chunkIdx: Int, peerRef: ActorRef) e
     /* -- ACTOR BEHAVIOR -- */
 
     /**
-     * Upon booting up, the ChunkDownloader will request the Chunk from the Peer
-     * and set a Timeout for the Peer's response.
-     */
+      * Upon booting up, the ChunkDownloader will request the Chunk from the Peer
+      * and set a Timeout for the Peer's response.
+      */
     override def preStart(): Unit = {
 
         /* The docs say:
@@ -107,7 +110,7 @@ class ChunkDownloader(p2PFile: LocalP2PFile, chunkIdx: Int, peerRef: ActorRef) e
     override def receive: Actor.Receive = LoggingReceive {
 
         case Piece(pieceIdx, data) =>
-//            listeners.foreach(_ ! DownloadSpeed(data.length))
+            //            listeners.foreach(_ ! DownloadSpeed(data.length))
             piecesRcvd(pieceIdx) = true
             saveData(data, pieceIdx)
 

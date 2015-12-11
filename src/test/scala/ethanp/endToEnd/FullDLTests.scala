@@ -1,12 +1,12 @@
 package ethanp.endToEnd
 
 import akka.actor.{ActorRef, Props}
-import akka.testkit.TestActorRef
 import akka.contrib.throttle.Throttler._
+import akka.testkit.TestActorRef
 import ethanp.actors.BaseTester
 import ethanp.backend.Client
-import ethanp.file.{FileToDownload, LocalP2PFile}
 import ethanp.backend.client._
+import ethanp.file.{FileToDownload, LocalP2PFile}
 import org.scalatest.Suites
 
 import scala.collection.immutable.IndexedSeq
@@ -17,9 +17,9 @@ import scala.language.postfixOps
 import scala.reflect.io.Path
 
 /**
- * Created by Ethan Petuchowski on 7/6/15.
- *
- */
+  * Created by Ethan Petuchowski on 7/6/15.
+  *
+  */
 class FullDLTests extends Suites(
     new SingleDL,
     new SingleClientMultiDL,
@@ -27,16 +27,20 @@ class FullDLTests extends Suites(
 )
 
 class DLTests extends BaseTester {
+
     case class Loc(from: Path, to: Path)
 
     def filesEqual(loc: Loc): Boolean = filesEqual(loc.from, loc.to)
+
     def filesEqual(p1: Path, p2: Path): Boolean = filesEqual(p1.toString(), p2.toString())
+
     def filesEqual(path1: String, path2: String): Boolean =
         fromFile(path1).mkString == fromFile(path2).mkString
 
     // this var "state" is necessary so that e.g. makeClients can be called
     // multiple times and not create multiple clients with the same "name"
     var actorCtr = 0
+
     def makeActors(num: Int, props: Props, name: String): IndexedSeq[ActorRef] =
         (1 to num).map { i =>
             actorCtr += 1
@@ -48,9 +52,13 @@ class DLTests extends BaseTester {
         clients foreach (_ ! SetUploadLimit(20 msgsPerSecond))
         clients
     }
+
     def makeTrackers(num: Int) = makeActors(num, Props[Tracker], "tracker").map(_.asInstanceOf[TestActorRef[Tracker]])
+
     val (fromDir, toDir): (Path, Path) = ("testfiles", "downloads")
-    def fromTo(filename: String) = Loc(fromDir/filename, toDir/filename)
+
+    def fromTo(filename: String) = Loc(fromDir / filename, toDir / filename)
+
     val testfileNames: IndexedSeq[String] = (2 to 3).map(i => s"input$i.txt") :+ "Test1.txt"
 }
 
@@ -108,7 +116,7 @@ class SingleClientMultiDL extends DLTests {
 
             /* see if it worked */
             within(5 seconds) {
-                expectMsgAllOf(testfileNames map DownloadSuccess:_*)
+                expectMsgAllOf(testfileNames map DownloadSuccess: _*)
             }
             for (loc <- testLocs)
                 assert(filesEqual(loc))
@@ -130,7 +138,7 @@ class MultiClientMultiDL extends DLTests {
                     props = Client.props(downloadsDir = s"client-$i-dl"),
                     name = s"client-$i"
                 )
-            } map { _.asInstanceOf[TestActorRef[Client]] }
+            } map {_.asInstanceOf[TestActorRef[Client]]}
 
             // each client is associated with a set of pairs defining which
             // "real" file they're downloading and where they should download it to
@@ -147,7 +155,7 @@ class MultiClientMultiDL extends DLTests {
                 // all clients download all the files
                 clients.zip(clientLocs).foreach { case (client, clientLoc) =>
                     val clientDlDir = Path(client.underlyingActor.downloadDir)
-                    val loc = Loc(from, clientDlDir/filename)
+                    val loc = Loc(from, clientDlDir / filename)
                     clientLoc += loc
                     loc.to.toFile.delete()
                     client.underlyingActor.listeners += self
@@ -163,7 +171,7 @@ class MultiClientMultiDL extends DLTests {
                             client <- clients
                             filename <- testfileNames
                         } yield DownloadSuccess(filename)
-                    ):_*
+                        ): _*
                 )
             }
             for (locs <- clientLocs; loc <- locs)

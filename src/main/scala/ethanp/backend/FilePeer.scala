@@ -5,14 +5,15 @@ import akka.actor.ActorRef
 import scala.collection.mutable
 
 /**
- * Ethan Petuchowski
- * 7/4/15
- */
+  * Ethan Petuchowski
+  * 7/4/15
+  */
 /** They're ordered by how desirable they are to download from */
 sealed abstract class FilePeer(val ref: ActorRef) extends Ordered[FilePeer] {
     val UNKNOWN = -1
     var histSpeedBytesSec: Int = UNKNOWN
     var ongoingChunkTransfers = List.empty[ChunkDownloader]
+
     def hasChunk(idx: Int): Boolean
 
     // must ensure that lower == HIGHER priority

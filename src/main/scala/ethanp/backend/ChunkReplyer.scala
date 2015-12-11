@@ -3,33 +3,34 @@ package ethanp.backend
 import akka.actor.{Actor, ActorLogging, PoisonPill, Props}
 import akka.contrib.throttle.Throttler.{Rate, SetTarget}
 import akka.contrib.throttle.TimerBasedThrottler
-import ethanp.backend.client.{ChunkSuccess, Piece, ChunkReply}
+import ethanp.backend.client.{ChunkReply, ChunkSuccess, Piece}
 import ethanp.file.LocalP2PFile
 
 import scala.util.{Failure, Success}
 
 /**
- * Ethan Petuchowski
- * 7/3/15
- */
+  * Ethan Petuchowski
+  * 7/3/15
+  */
 class ChunkReplyer(localP2PFile: LocalP2PFile, replyRate: Rate) extends Actor with ActorLogging {
 
     def logError(e: Throwable) = {
-        log.error(s"""
-                     |$e
-                     |couldn't read file ${localP2PFile.fileInfo.filename}
-                     |ignoring client request
+        log.error(
+            s"""
+               |$e
+               |couldn't read file ${localP2PFile.fileInfo.filename}
+               |ignoring client request
                    """.stripMargin
         )
         // don't exit or anything. just keep trucking.
     }
 
     /**
-     * Send the Client each Piece of the Chunk, and then a ChunkSuccess
-     *
-     * Simply give up if there's an Exception
-     *      (Client will timeout, and appropriate steps will be taken)
-     */
+      * Send the Client each Piece of the Chunk, and then a ChunkSuccess
+      *
+      * Simply give up if there's an Exception
+      * (Client will timeout, and appropriate steps will be taken)
+      */
     def sendChunk(reply: ChunkReply): Unit = {
         val numPieces = localP2PFile.fileInfo.numPiecesInChunk(reply.chunkIdx)
 
@@ -62,7 +63,7 @@ class ChunkReplyer(localP2PFile: LocalP2PFile, replyRate: Rate) extends Actor wi
     }
 
     override def receive: Receive = {
-        case m : ChunkReply =>
+        case m: ChunkReply =>
             sendChunk(m)
             self ! PoisonPill
     }
