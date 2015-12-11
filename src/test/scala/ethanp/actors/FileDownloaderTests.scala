@@ -211,14 +211,13 @@ class FileDownloaderTestNotFullyAvailable extends FileDownloaderTest {
             val fdActorRef = TestActorRef(Props(classOf[FileDownloader], ftd, downloadDir), self, "fdl-3")
             val fdInstance: FileDownloader = fdActorRef.underlyingActor
 
-            // speed things up for the testing purposes
-            fdInstance.progressTimeout = 2 seconds
-
             "first starting up" should {
                 "check status of all potential peers" in {
                     quickly(expectNOf(leechers.size, GetAvblty(fileInfo.abbreviation)))
                 }
             }
+
+//            fdInstance.retryDownloadInterval = 2 seconds
 
             val numChunkDownloaders = Seq(availableChunksIndexes.size, fdInstance.maxConcurrentChunks).min
             "getting chunk availabilities" should {
@@ -255,8 +254,10 @@ class FileDownloaderTestNotFullyAvailable extends FileDownloaderTest {
                         within(200 milliseconds)(expectMsgType[ChunkRequest])
                     }
                 }
-                "eventually send 'TransferTimeout' status from" in {
-                    within(fdInstance.progressTimeout - 1.second)(expectNoMsg())
+
+                // TODO eventually retry connecting with everyone in swarm
+                "eventually retry connecting with everyone in swarm" ignore {
+                    within(fdInstance.retryDownloadInterval - 1.second)(expectNoMsg())
                     within(2 seconds)(expectMsg(TransferTimeout))
                     assert(true) // bleh.
                 }
@@ -294,7 +295,7 @@ class PeerTimeoutWithBackups extends FileDownloaderTest {
             val fileToDownload = FileToDownload(fileInfo, seeders, leechers = Set.empty)
             val fdActorRef = TestActorRef(Props(classOf[FileDownloader], fileToDownload, downloadDir), self, "FileDownloaderUnderTest")
             val fdInstance: FileDownloader = fdActorRef.underlyingActor
-            fdInstance.progressTimeout = 2 seconds // speed things up for the testing purposes
+            fdInstance.retryDownloadInterval = 2 seconds // speed things up for the testing purposes
 
             "one dies part-way through the transfer" should {
                 "do the usual (as tested above)" in {
@@ -327,7 +328,7 @@ class PeerTimeoutWithBackups extends FileDownloaderTest {
 
                 "timeout on the other seeder" in {
 
-                    within(fdInstance.progressTimeout + 1.second) {
+                    within(fdInstance.retryDownloadInterval + 1.second) {
                         val possibilities = seeders.toList map (i =>
                             ChunkDLFailed(0, i, TransferTimeout)
                             )

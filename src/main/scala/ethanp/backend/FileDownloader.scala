@@ -21,7 +21,7 @@ import scala.language.postfixOps
   */
 class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor with ActorLogging {
 
-    import fileDLing.fileInfo.{filename, abbreviation, numChunks}
+    import fileDLing.fileInfo.{abbreviation, filename, numChunks}
 
     /** Reference to the file-handle (on the file-system) to which the chunks of the
       * file will be written.
@@ -43,28 +43,34 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
     /** added to by responses from the leechers when they get Ping'd */
     var liveLeechers = Set.empty[Leecher]
 
-    /** for speed calculations */
+    /** for SOMEDAY speed calculations */
     var bytesDLedPastSecond = 0
 
-    /* UTILITY METHODS */
     /** children actors who are ''supposed'' to be busy downloading chunks */
     val chunkDownloaders = mutable.Set.empty[ActorRef]
     val notStartedChunks = fullMutableBitSet
     val speedometer = context.system.scheduler.schedule(initialDelay = 1 second, interval = 1 second) {
         bytesDLedPastSecond = 0
     }
+
+    /** Notified of TransferTimeouts */
     var listeners = Set(context.parent)
+
+    /** How many ChunkDownloader children this FileDownloader may have at any given time */
     var maxConcurrentChunks = 3
-    var progressTimeout = 4 seconds
+
+    /** Reset upon chunk download initiation */
+    var retryDownloadInterval = 1 minute
+
     /** peers we've timed-out upon recently */
     var quarantine = Set.empty[ActorRef]
+
     // SOMEDAY should updated periodically after new queries of the Trackers
     var potentialDownloadees: Set[ActorRef] = fileDLing.seeders ++ fileDLing.leechers
 
 
     def peersWhoHaventResponded = potentialDownloadees -- liveSeederRefs -- liveLeecherRefs
 
-    /* FIELDS */
 
     def liveSeederRefs = liveSeeders map (_.ref)
 
@@ -88,11 +94,11 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
     override def receive: Actor.Receive = LoggingReceive {
 
         case ReceiveTimeout =>
-            listeners foreach (_ ! TransferTimeout)
+            // TODO reconnect with everyone in swarm and check availabilities
 
         case ChunkComplete(idx) =>
-            context.setReceiveTimeout(progressTimeout)
             attemptChunkDownload()
+
         // SOMEDAY publish completion to EventBus
         // so that interested peers know we now have this chunk
 
@@ -136,6 +142,7 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
     def fullMutableBitSet = mutable.BitSet(0 until numChunks: _*)
 
     def attemptChunkDownload(): Unit = {
+        context.setReceiveTimeout(retryDownloadInterval)
         // kick-off an unstarted chunk
         if (notStartedChunks.nonEmpty) {
             if (chunkDownloaders.size >= maxConcurrentChunks) return
