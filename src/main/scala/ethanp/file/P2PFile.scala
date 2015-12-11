@@ -13,17 +13,24 @@ import scala.util.{Failure, Success, Try}
   * Ethan Petuchowski
   * 6/3/15
   *
-  * The goal is that a file never exists fully in memory
-  * It is a collection of "chunks"
-  * Those "chunks" get transmitted in batches of "pieces"
-  * Each "piece" is transmitted as an akka message
-  * This is when the progress bar may be updated
+  * A file is broken into a collection of "chunks".
+  *
+  * Those "chunks" get transmitted in batches of "pieces".
+  *
+  * Each "piece" is transmitted as an akka message.
+  *
+  * This is when the progress bar may be updated.
+  *
+  * In fact the _only_ point of having "pieces" is to
+  * be able to implement a progress bar on top.
+  *
+  * If there's a better way to do that, I'd love to know.
   */
 
-/**
-  * The P2PFile contains metadata about a file that a peer requires
+/** The P2PFile contains metadata about a file that a peer requires
   * to be able to up/download the file
-  * It is saved on disk (as JSON?)
+  *
+  * TODO It should be saved on disk (as JSON?)
   */
 trait P2PFile {
     val fileInfo: FileInfo
@@ -34,23 +41,22 @@ case class FileInfo(
     chunkHashes: Vector[Sha2],
     fileLength: Int
 ) {
-    val lastChunkIdx = (fileLength.toDouble / BYTES_PER_CHUNK).ceil.toInt - 1
-    val lastChunkStartLoc = lastChunkIdx * BYTES_PER_CHUNK
-    val numChunks = chunkHashes.length
-
-    def numBytesInChunk(chunkIdx: Int): Int =
-        if (chunkIdx < lastChunkIdx) BYTES_PER_CHUNK
-        else fileLength - lastChunkStartLoc
-
-    def numPiecesInChunk(chunkIdx: Int): Int =
-        if (chunkIdx < lastChunkIdx) PIECES_PER_CHUNK
-        else (numBytesInChunk(chunkIdx).toDouble / BYTES_PER_PIECE).ceil.toInt
-
     /** a sha2 hash of the contents of the FileInfo itself */
     lazy val abbreviation: Sha2 = {
         val elemsAsString = filename + (chunkHashes mkString "") + fileLength
         Sha2(elemsAsString.getBytes)
     }
+    val lastChunkIdx = (fileLength.toDouble / BYTES_PER_CHUNK).ceil.toInt - 1
+    val lastChunkStartLoc = lastChunkIdx * BYTES_PER_CHUNK
+    val numChunks = chunkHashes.length
+
+    def numPiecesInChunk(chunkIdx: Int): Int =
+        if (chunkIdx < lastChunkIdx) PIECES_PER_CHUNK
+        else (numBytesInChunk(chunkIdx).toDouble / BYTES_PER_PIECE).ceil.toInt
+
+    def numBytesInChunk(chunkIdx: Int): Int =
+        if (chunkIdx < lastChunkIdx) BYTES_PER_CHUNK
+        else fileLength - lastChunkStartLoc
 }
 
 /**
@@ -111,18 +117,41 @@ case class LocalP2PFile(
         finally fileStream.close()
     }
 
-    def doesntHaveChunk(idx: Int): Boolean = unavailableChunkIndexes contains idx
-
     def hasDataForChunk(idx: Int): Boolean = !doesntHaveChunk(idx)
+
+    def doesntHaveChunk(idx: Int): Boolean = unavailableChunkIndexes contains idx
 }
 
 object LocalP2PFile {
 
-    class ReadFailedException extends Exception
-
     val BYTES_PER_PIECE = 1024
     val PIECES_PER_CHUNK = 3
     val BYTES_PER_CHUNK = BYTES_PER_PIECE * PIECES_PER_CHUNK
+
+    /** Overloading of the above loadFile method
+      */
+    def loadFile(name: String, path: Path): LocalP2PFile = loadFile(name, path.toString())
+
+    /** Create a `LocalP2PFile` with the `givenName` from the file at `filePath`
+      *
+      * @param givenName The name to be bestowed upon the resulting `LocalP2PFile` object
+      * @param filePath The location of the `File` in the local filesystem
+      * @return a well-formed `LocalP2PFile`
+      */
+    def loadFile(givenName: String, filePath: String): LocalP2PFile = {
+        val file = new File(filePath)
+        val chunkHashes: Vector[Sha2] = hashTheFile(file)
+        LocalP2PFile(
+            FileInfo(
+                givenName,
+                chunkHashes,
+                file.length().toInt
+            ),
+            file = file,
+            // if you loaded the file, you must have all of it
+            unavailableChunkIndexes = new mutable.BitSet(chunkHashes.length)
+        )
+    }
 
     /**
       * Create a vector of the Sha2 hashes of each Chunk of the given file,
@@ -182,35 +211,13 @@ object LocalP2PFile {
         onComplete
     }
 
-    /** Create a `LocalP2PFile` with the `givenName` from the file at `filePath`
-      *
-      * @param givenName The name to be bestowed upon the resulting `LocalP2PFile` object
-      * @param filePath The location of the `File` in the local filesystem
-      * @return a well-formed `LocalP2PFile`
-      */
-    def loadFile(givenName: String, filePath: String): LocalP2PFile = {
-        val file = new File(filePath)
-        val chunkHashes: Vector[Sha2] = hashTheFile(file)
-        LocalP2PFile(
-            FileInfo(
-                givenName,
-                chunkHashes,
-                file.length().toInt
-            ),
-            file = file,
-            // if you loaded the file, you must have all of it
-            unavailableChunkIndexes = new mutable.BitSet(chunkHashes.length)
-        )
-    }
-
-    /** Overloading of the above loadFile method
-      */
-    def loadFile(name: String, path: Path): LocalP2PFile = loadFile(name, path.toString())
-
     /** Create a LocalP2PFile representation of the given File, where it is known that
       * THIS user doesn't physically own any of the File's data yet.
       */
     def empty(fileInfo: FileInfo, file: File) = LocalP2PFile(
         fileInfo, file, mutable.BitSet(0 until fileInfo.numChunks: _*)
     )
+
+    class ReadFailedException extends Exception
+
 }

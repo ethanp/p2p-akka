@@ -13,11 +13,12 @@ Much simplified version of BitTorrent.
         val PIECES_PER_CHUNK = 3
         val BYTES_PER_CHUNK = BYTES_PER_PIECE * PIECES_PER_CHUNK
         ```
+* A file's "`abbreviation`"" is a hash of `$filename$chunkHashes$fileLength`
 * The client may upload these hashes along with the filename to all "trackers"
   it knows. Once the tracker receives it,
-    * If the hash matches the hash of any file the tracker currently has by
-      this name, or the tracker has no file with this name, the tracker adds
-      this client to the list of known "seeders" of this file
+    * If the hash matches any file the tracker currently has by this name, or
+      the tracker has no file with this name, the tracker adds this client to
+      the list of known "seeders" of this file
     * Otherwise, the tracker has a file with this name but a different hash,
       and the new listing will be _rejected_
 

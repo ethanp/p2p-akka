@@ -68,3 +68,8 @@ class ChunkReplyer(localP2PFile: LocalP2PFile, replyRate: Rate) extends Actor wi
             self ! PoisonPill
     }
 }
+
+object ChunkReplyer {
+    def props(localP2PFile: LocalP2PFile, replyRate: Rate) =
+        Props(new ChunkReplyer(localP2PFile, replyRate))
+}

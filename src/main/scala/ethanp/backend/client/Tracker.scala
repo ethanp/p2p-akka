@@ -21,15 +21,6 @@ class Tracker extends Actor with ActorLogging {
       */
     val knowledgeOf = mutable.Map.empty[String, FileToDownload]
 
-    // I would like to know a better way to do this while keeping things immutable
-    def addSeeder(filename: String, sndr: ActorRef) { knowledgeOf(filename) = knowledgeOf(filename) seed_+ sndr }
-
-    def addLeecher(filename: String, sndr: ActorRef) { knowledgeOf(filename) = knowledgeOf(filename) leech_+ sndr }
-
-    def subtractSeeder(filename: String, sndr: ActorRef) { knowledgeOf(filename) = knowledgeOf(filename) seed_- sndr }
-
-    def subtractLeecher(filename: String, sndr: ActorRef) { knowledgeOf(filename) = knowledgeOf(filename) leech_- sndr }
-
     override def receive: Receive = {
         case m: ListTracker => sender ! TrackerKnowledge(knowledgeOf.values.toList)
 
@@ -38,8 +29,6 @@ class Tracker extends Actor with ActorLogging {
             val desiredFilename = info.filename
             def hashMatches = knowledgeOf(desiredFilename).fileInfo == info
             def filenameKnown = knowledgeOf contains desiredFilename
-            def replyDifferentFileExists() = sender ! TrackerSideError(s"different file named $desiredFilename already tracked")
-            def replyNoChange() = sender ! TrackerSideError("already knew you are seeding this file")
             def replySuccess() = sender ! SuccessfullyAdded(desiredFilename)
             def successfullyAddToSeeders() {
                 addSeeder(desiredFilename, sender())
@@ -47,31 +36,47 @@ class Tracker extends Actor with ActorLogging {
             }
 
             if (!filenameKnown) {
-                knowledgeOf(desiredFilename) = FileToDownload(info, Set(sender()), Set.empty)
-                replySuccess()
+                knowledgeOf(desiredFilename) = FileToDownload(
+                    fileInfo = info,
+                    seeders = Set.empty,
+                    leechers = Set.empty
+                )
+                successfullyAddToSeeders()
             }
             else if (!hashMatches) {
-                replyDifferentFileExists()
+                replyWithError(s"different file named $desiredFilename already tracked")
             }
             else {
-                knowledgeOf(desiredFilename) match {
-                    case swarm if swarm.seeders contains sender =>
-                        replyNoChange()
-                    case swarm if swarm.leechers contains sender =>
+                val swarm = knowledgeOf(desiredFilename)
+                if (swarm.seeders contains sender) {
+                    replyWithError("already knew you are seeding this file")
+                } else {
+                    if (swarm.leechers contains sender) {
                         subtractLeecher(desiredFilename, sender())
-                        successfullyAddToSeeders()
-                    case _ =>
-                        successfullyAddToSeeders()
+                    }
+                    successfullyAddToSeeders()
                 }
             }
 
         case DownloadFile(filename) =>
-            if (knowledgeOf contains filename) {
+            if (!(knowledgeOf contains filename))
+                replyWithError(s"I don't know a file called $filename")
+            else {
                 sender ! knowledgeOf(filename) // msg is of type `FileToDownload`
                 addLeecher(filename, sender())
                 if (knowledgeOf(filename).seeders contains sender)
                     subtractSeeder(filename, sender())
             }
-            else sender ! TrackerSideError(s"I don't know a file called $filename")
     }
+
+    def replyWithError(s: String): Unit = sender ! TrackerSideError(s)
+
+    def addLeecher(filename: String, sndr: ActorRef) { knowledgeOf(filename) = knowledgeOf(filename) leech_+ sndr }
+
+    def subtractSeeder(filename: String, sndr: ActorRef) { knowledgeOf(filename) = knowledgeOf(filename) seed_- sndr }
+
+    // I would like to know a better way to do this while keeping things immutable
+    def addSeeder(filename: String, sndr: ActorRef) { knowledgeOf(filename) = knowledgeOf(filename) seed_+ sndr }
+
+    def subtractLeecher(filename: String, sndr: ActorRef) { knowledgeOf(filename) = knowledgeOf(filename) leech_- sndr }
 }

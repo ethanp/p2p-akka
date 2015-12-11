@@ -37,6 +37,11 @@ class ChunkDownloader(p2PFile: LocalP2PFile, chunkIdx: Int, peerRef: ActorRef)
       * Note: An IOException here will crash the program. I don't really have any better ideas...retry?
       * I'll address it if it comes up
       */
+    // TODO this is actually, problematic! the chunkData should be sent to the file downloader
+    // to write (by this method), so that there can (potentially) be multiple nodes from which
+    // this chunk is being concurrently downloaded, and there are no write conflicts. Also this
+    // will mean that there's no shared state (the local file) between this actor and its parent
+    // `FileDownloader` object.
     def writeChunk(): Boolean = {
 
         // precondition: data shouldn't already be there

@@ -32,13 +32,6 @@ class Client(val downloadDir: File) extends Actor with ActorLogging {
     var listeners = Set.empty[ActorRef]
     var uploadLimit: Rate = 1 msgsPerSecond
 
-    /* UTILITIES */
-
-    def getDownloader(abbrev: Sha2): Option[ActorRef] = currentDownloads.find(_._1.abbreviation == abbrev).map(_._2)
-
-
-    /* RECEIVE */
-
     override def receive: Receive = LoggingReceive {
 
         case SetUploadLimit(rate: Rate) => uploadLimit = rate
@@ -65,10 +58,12 @@ class Client(val downloadDir: File) extends Actor with ActorLogging {
             if (knownTrackers contains tracker) tracker ! DownloadFile(filename)
             else sender ! ClientError("I don't know that tracker")
 
-        case m: FileToDownload =>
+        case fileToDownload: FileToDownload =>
             // pass args to actor constructor (runtime IllegalArgumentException if you mess it up!)
-            currentDownloads += m.fileInfo -> context.actorOf(
-                Props(classOf[FileDownloader], m, downloadDir), name = s"file-${m.fileInfo.filename}")
+            currentDownloads += fileToDownload.fileInfo -> context.actorOf(
+                FileDownloader.props(fileToDownload, downloadDir),
+                name = s"FileDownloader-${fileToDownload.fileInfo.filename}"
+            )
 
         /* at this time, handling ChunkRequests is a *non-blocking* maneuver for a client */
         case ChunkRequest(infoAbbrev, chunkIdx) =>
@@ -79,8 +74,9 @@ class Client(val downloadDir: File) extends Actor with ActorLogging {
                   but that will still be the case with this change.
               */
             if (localAbbrevs contains infoAbbrev) {
-                val p2PFile = localFiles(localAbbrevs(infoAbbrev))
-                context.actorOf(Props(classOf[ChunkReplyer], p2PFile, uploadLimit)) ! ChunkReply(sender(), chunkIdx)
+                val p2PFile = localFileWithAbbreviation(infoAbbrev)
+                val chunkReplyer = context.actorOf(ChunkReplyer.props(p2PFile, uploadLimit))
+                chunkReplyer ! ChunkReply(sender(), chunkIdx)
             }
             else sender ! PeerSideError("file with that hash not known")
 
@@ -110,8 +106,11 @@ class Client(val downloadDir: File) extends Actor with ActorLogging {
     }
 
 
-    /* RECEIVE METHODS */
-    def loadFile(path: Path, name: String): LocalP2PFile = loadFile(path.toString(), name)
+    /* UTILITIES */
+
+    def getDownloader(abbrev: Sha2): Option[ActorRef] = currentDownloads.find(_._1.abbreviation == abbrev).map(_._2)
+
+    def localFileWithAbbreviation(abbrev: Sha2) = localFiles(localAbbrevs(abbrev))
 
     def loadFile(pathString: String, name: String): LocalP2PFile = {
         log.info(s"loading $pathString")
@@ -120,6 +119,9 @@ class Client(val downloadDir: File) extends Actor with ActorLogging {
         localAbbrevs(localFile.fileInfo.abbreviation) = name
         localFile
     }
+
+    /* RECEIVE METHODS */
+    def loadFile(path: Path, name: String): LocalP2PFile = loadFile(path.toString(), name)
 }
 
 /**
