@@ -37,10 +37,10 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
     /** Reference to the file */
     val p2PFile = LocalP2PFile.empty(fileDLing.fileInfo, localFile)
 
-    /** added to by responses from the seeders when they get Ping'd */
+    /** add seeders who respond to Pings, remove on timeout */
     var liveSeeders = Set.empty[Seeder]
 
-    /** added to by responses from the leechers when they get Ping'd */
+    /** add leechers who respond to Pings, remove on timeout */
     var liveLeechers = Set.empty[Leecher]
 
     /** for SOMEDAY speed calculations */
@@ -63,7 +63,7 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
     var retryDownloadInterval = 1 minute
 
     /** peers we've timed-out upon recently */
-    var quarantine = Set.empty[ActorRef]
+    var quarantine = Set.empty[FilePeer]
 
     // SOMEDAY should updated periodically after new queries of the Trackers
     var potentialDownloadees: Set[ActorRef] = fileDLing.seeders ++ fileDLing.leechers
@@ -71,10 +71,20 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
 
     def peersWhoHaventResponded = potentialDownloadees -- liveSeederRefs -- liveLeecherRefs
 
+    def liveSeederRefs = liveSeeders map (_.actorRef)
 
-    def liveSeederRefs = liveSeeders map (_.ref)
+    def liveLeecherRefs = liveLeechers map (_.actorRef)
 
-    def liveLeecherRefs = liveLeechers map (_.ref)
+    def quarantinePeer(actorRef: ActorRef): Unit = {
+        for (peer <- liveLeechers if peer.actorRef == actorRef) {
+            liveLeechers -= peer
+            quarantine += peer
+        }
+        for (peer <- liveSeeders if peer.actorRef == actorRef) {
+            liveSeeders -= peer
+            quarantine += peer
+        }
+    }
 
     /**
       * called by Akka framework when this Actor is asynchronously started
@@ -94,7 +104,7 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
     override def receive: Actor.Receive = LoggingReceive {
 
         case ReceiveTimeout =>
-            // TODO reconnect with everyone in swarm and check availabilities
+        // TODO reconnect with everyone in swarm and check availabilities
 
         case ChunkComplete(idx) =>
             attemptChunkDownload()
@@ -105,12 +115,12 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
         /**
           * Received *after* the ChunkDownloader tried retrying a few times
           */
-        case failureMessage@ChunkDLFailed(idx, peerRef, cause) => cause match {
-            case TransferTimeout => listeners foreach (_ ! failureMessage)
-            case InvalidData => log.debug("ahoy!")
-        }
-
-
+        case failureMessage@ChunkDLFailed(idx, peerRef, cause) =>
+            quarantinePeer(peerRef)
+            cause match {
+                case TransferTimeout => listeners foreach (_ ! failureMessage)
+                case InvalidData => log debug s"Received invalid data from $peerRef"
+            }
 
         // comes from ChunkDownloader
         case DownloadSpeed(numBytes) =>
@@ -151,7 +161,7 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
                 case Some(nextIdx) =>
                     notStartedChunks.remove(nextIdx)
                     val peer = nextToDLFrom(nextIdx)
-                    chunkDownloaders += spawnChunkDownloader(chunkIdx = nextIdx, peerRef = peer.ref)
+                    chunkDownloaders += spawnChunkDownloader(chunkIdx = nextIdx, peerRef = peer.actorRef)
                 case None =>
                     // SOMEDAY I need to wait for an event published on the bus that a chunk has
                     // been downloaded and ask trackers for new people, and ping the dead people

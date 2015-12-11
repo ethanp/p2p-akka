@@ -9,7 +9,7 @@ import scala.collection.mutable
   * 7/4/15
   */
 /** They're ordered by how desirable they are to download from */
-sealed abstract class FilePeer(val ref: ActorRef) extends Ordered[FilePeer] {
+sealed abstract class FilePeer(val actorRef: ActorRef) extends Ordered[FilePeer] {
     val UNKNOWN = -1
     var histSpeedBytesSec: Int = UNKNOWN
     var ongoingChunkTransfers = List.empty[ChunkDownloader]
