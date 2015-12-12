@@ -53,7 +53,7 @@ class FileDownloaderTest extends BaseTester {
   * NARRATIVE
   * - The FileDownloader asks for their `Avblty`s
   * + In that way, it finds out the categories of Peers created above
-  * - It downloads the chunks, and sends its listeners a DownloadSuccess
+  * - It downloads the chunks, writes the data to disk, and sends its listeners a DownloadSuccess
   */
 class FileDownloaderTestLiveAndDeadSeedersAndLeechers extends FileDownloaderTest {
     "there are live & dead seeders & leechers" when {
@@ -64,16 +64,14 @@ class FileDownloaderTestLiveAndDeadSeedersAndLeechers extends FileDownloaderTest
         val livePeers = liveSeeders ++ liveLeechers
         val deadPeers = deadSeeders ++ deadLeechers
         val input2FTD = FileToDownload(input2Info, seeders, leechers)
-        val downloadedFile = new File(downloadDir, input2FTD.fileInfo.filename)
-        if (downloadedFile.exists()) downloadedFile.delete()
-        downloadedFile.deleteOnExit()
         val parent = TestProbe()
         val fdActorRef = TestActorRef(
             props = FileDownloader.props(input2FTD, downloadDir),
             supervisor = parent.ref,
             name = "FileDownloaderUnderTest"
         )
-        val fdInstance: FileDownloader = fdActorRef.underlyingActor
+        val fdPtr: FileDownloader = fdActorRef.underlyingActor
+        fdPtr.localFile.deleteOnExit()
 
         "first starting up" should {
             "Ping all peers to check which are alive" in {
@@ -103,20 +101,20 @@ class FileDownloaderTestLiveAndDeadSeedersAndLeechers extends FileDownloaderTest
 
         "getting chunk availabilities" should {
             "believe seeders are seeders" in {
-                fdInstance.liveSeeders map (_.actorRef) shouldEqual liveSeeders
+                fdPtr.liveSeeders map (_.actorRef) shouldEqual liveSeeders
             }
             "know avbl of leechers" in {
                 foreachLeecher { (avbl, leecher) =>
-                    fdInstance.liveLeechers should contain(Leecher(avbl, leecher))
+                    fdPtr.liveLeechers should contain(Leecher(avbl, leecher))
                 }
             }
             "leave aside peers who don't respond" in {
-                fdInstance.peersWhoHaventResponded shouldEqual deadPeers
+                fdPtr.peersWhoHaventResponded shouldEqual deadPeers
             }
 
             "spawn the right number of chunk downloaders" in {
-                val numConcurrentDLs = Seq(fdInstance.maxConcurrentChunks, livePeers.size).min
-                fdInstance.chunkDownloaders should have size numConcurrentDLs
+                val numConcurrentDLs = Seq(fdPtr.maxConcurrentChunks, livePeers.size).min
+                fdPtr.chunkDownloaders should have size numConcurrentDLs
 
                 /* These are sent by the spawned ChunkDownloaders to the "peers",
                  * and those peers all happen to be this test. So we need to
@@ -136,13 +134,13 @@ class FileDownloaderTestLiveAndDeadSeedersAndLeechers extends FileDownloaderTest
                 for (i ← shuffledIdxs) {
                     fdActorRef ! ChunkCompleteData(i, bytesForChunk(i))
                 }
-                fdInstance.incompleteChunks shouldBe empty
+                fdPtr.incompleteChunks shouldBe empty
             }
-            "write chunk of CORRECT data to disk" in {
+            "write file data to disk matching original file" in {
                 val realFileData = io.Source.fromFile(input2TextP2P.file)
-                val dlFileData = io.Source.fromFile(downloadedFile)
+                val dlFileData = io.Source.fromFile(fdPtr.localFile)
 
-                downloadedFile should exist
+                fdPtr.localFile should exist
                 realFileData.mkString shouldEqual dlFileData.mkString
             }
             "inform `parent` of download success" in {
@@ -154,6 +152,14 @@ class FileDownloaderTestLiveAndDeadSeedersAndLeechers extends FileDownloaderTest
     }
 }
 
+/** First of all, let us be clear: this test is not very useful.
+  *
+  * In this test, there are no seeders, and each chunk is held by only one leecher.
+  * Here, we verify that the right number of chunk requests are sent to the leechers.
+  *
+  * I'll leave it here in case it comes in handy for something later.
+  * Who knows? maybe it will detect a bug someday....
+  */
 class FileDownloaderTestJustEnoughLeechers extends FileDownloaderTest {
     "a FileDownloader" when {
         "the full file is barely available" when {
@@ -162,9 +168,10 @@ class FileDownloaderTestJustEnoughLeechers extends FileDownloaderTest {
                 i: Int => system.actorOf(Props(classOf[ForwardingActor], self), "part2-" + i)
             }
 
-            val ftd = FileToDownload(input2Info, Set.empty, leechers)
-            val fdActorRef = TestActorRef(Props(classOf[FileDownloader], ftd, downloadDir), self, "fdl-2")
-            val fdInstance: FileDownloader = fdActorRef.underlyingActor
+            val ftd = FileToDownload(input2Info, seeders = Set.empty, leechers = leechers)
+            val fdActorRef = TestActorRef(FileDownloader.props(ftd, downloadDir), self, "fdl-2")
+            val fdPtr: FileDownloader = fdActorRef.underlyingActor
+            fdPtr.localFile.deleteOnExit()
 
             "first starting up" should {
                 "check which peers are alive" in {
@@ -173,16 +180,7 @@ class FileDownloaderTestJustEnoughLeechers extends FileDownloaderTest {
             }
             "getting chunk availabilities" should {
                 "know avbl of leechers" in {
-                    /* test file has as many chunks as there are leechers */
-
-                    /* for eg. 3 chunks, we should have the following leechers
-                     *
-                     *      [1, 0, 0]
-                     *      [0, 1, 0]
-                     *      [0, 0, 1]
-                     *
-                     * this is what was meant by "just enough" in this test's title
-                     */
+                    /* recall from ScalaDoc string that each leecher has a different chunk */
                     var expectedLeechers = List.empty[Leecher]
                     for ((leecher, idx) ← leechers.zipWithIndex) {
                         val mutableAvbl = new mutable.BitSet(input2Info.numChunks) + idx
@@ -193,11 +191,11 @@ class FileDownloaderTestJustEnoughLeechers extends FileDownloaderTest {
                     }
 
                     // trust, but verify
-                    fdInstance.liveLeechers shouldEqual expectedLeechers.toSet
+                    fdPtr.liveLeechers shouldEqual expectedLeechers.toSet
                 }
                 "spawn the first three chunk downloaders" in {
-                    val numConcurrentDLs = Seq(fdInstance.maxConcurrentChunks, leechers.size).min
-                    fdInstance.chunkDownloaders should have size numConcurrentDLs
+                    val numConcurrentDLs = Seq(fdPtr.maxConcurrentChunks, leechers.size).min
+                    fdPtr.chunkDownloaders should have size numConcurrentDLs
                     quickly((1 to numConcurrentDLs) foreach { _ =>
                         expectMsgClass(classOf[ChunkRequest])
                     })
@@ -207,20 +205,37 @@ class FileDownloaderTestJustEnoughLeechers extends FileDownloaderTest {
     }
 }
 
+/** In this test, there are no seeders, and there is a single leecher holding each chunk,
+  * except that NO ONE has the LAST chunk.
+  */
 class FileDownloaderTestNotFullyAvailable extends FileDownloaderTest {
     "a FileDownloader" when {
         "the full file is not fully available" when {
 
-            val availableChunksIndexes = 0 until input2Info.numChunks - 1
+            val avblChunkIndices: Range = 0 until input2Info.numChunks - 1
 
             /* there are not as many Leechers as Chunks to be downloaded */
-            val leechers = availableChunksIndexes.toSet map {
+            val leechers: Set[ActorRef] = avblChunkIndices.toSet map {
                 i: Int => system.actorOf(Props(classOf[ForwardingActor], self), "part2-" + i)
             }
 
             val ftd = FileToDownload(input2Info, seeders = Set.empty, leechers = leechers)
-            val fdActorRef = TestActorRef(Props(classOf[FileDownloader], ftd, downloadDir), self, "fdl-3")
-            val fdInstance: FileDownloader = fdActorRef.underlyingActor
+            val fdActorRef = TestActorRef(FileDownloader.props(ftd, downloadDir), self, "fdl-3")
+            val fdPtr: FileDownloader = fdActorRef.underlyingActor
+            fdPtr.localFile.deleteOnExit()
+
+            /* TODO This test-class should be testing that the retry-download mechanism works
+             * However, note that I haven't implemented said mechanism yet.
+             */
+            fdPtr.retryDownloadInterval = 2 minutes // change to '2 seconds' or something
+
+            /* There are more than enough concurrent-chunk slots to download all available
+             * chunks at once. The point is that we still won't spawn that many ChunkDownloaders.
+             */
+            fdPtr.maxConcurrentChunks = Seq(avblChunkIndices.size+1, fdPtr.maxConcurrentChunks).max
+
+            /* the line above means that we can 'expect' the following to be true */
+            val numChunkDownloaders = avblChunkIndices.size
 
             "first starting up" should {
                 "check status of all potential peers" in {
@@ -228,9 +243,6 @@ class FileDownloaderTestNotFullyAvailable extends FileDownloaderTest {
                 }
             }
 
-//            fdInstance.retryDownloadInterval = 2 seconds
-
-            val numChunkDownloaders = Seq(availableChunksIndexes.size, fdInstance.maxConcurrentChunks).min
             "getting chunk availabilities" should {
                 "know avbl of leechers" in {
                     // test file has "3" chunks, though test doesn't rely on that
@@ -244,12 +256,12 @@ class FileDownloaderTestNotFullyAvailable extends FileDownloaderTest {
                     // verify (note: we're not *waiting* for the message to travel)
                     for ((leecher, idx) ← leechers.zipWithIndex) {
                         val avbl = new mutable.BitSet(input2Info.numChunks) + idx
-                        fdInstance.liveLeechers should contain(Leecher(avbl, leecher))
+                        fdPtr.liveLeechers should contain(Leecher(avbl, leecher))
                     }
-                    fdInstance.availableChunks shouldEqual BitSet(availableChunksIndexes: _*)
+                    fdPtr.availableChunks shouldEqual BitSet(avblChunkIndices: _*)
                 }
                 "spawn just the two chunk downloaders" in {
-                    fdInstance.chunkDownloaders should have size numChunkDownloaders
+                    fdPtr.chunkDownloaders should have size numChunkDownloaders
                     quickly((0 until numChunkDownloaders) foreach { _ =>
                         expectMsgType[ChunkRequest]
                     })
@@ -257,18 +269,18 @@ class FileDownloaderTestNotFullyAvailable extends FileDownloaderTest {
             }
             "continuing download" should {
                 // we get everything we expect to receive from peers
-                availableChunksIndexes foreach { chunkIdx =>
+                avblChunkIndices foreach { chunkIdx =>
 //                    TODO make this work: fdActorRef ! ChunkCompleteData(chunkIdx)
                 }
                 "send the rest of the ChunkRequests" in {
-                    numChunkDownloaders to availableChunksIndexes.last foreach { _ =>
+                    numChunkDownloaders to avblChunkIndices.last foreach { _ =>
                         within(200 milliseconds)(expectMsgType[ChunkRequest])
                     }
                 }
 
                 // TODO eventually retry connecting with everyone in swarm
                 "eventually retry connecting with everyone in swarm" ignore {
-                    within(fdInstance.retryDownloadInterval - 1.second)(expectNoMsg())
+                    within(fdPtr.retryDownloadInterval - 1.second)(expectNoMsg())
                     within(2 seconds)(expectMsg(TransferTimeout))
                     assert(true) // bleh.
                 }
