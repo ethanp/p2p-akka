@@ -1,10 +1,11 @@
 package ethanp.backend
 
-import java.io.File
+import java.io.{File, RandomAccessFile}
 
 import akka.actor._
 import akka.event.LoggingReceive
 import ethanp.backend.client._
+import ethanp.file.LocalP2PFile.BYTES_PER_CHUNK
 import ethanp.file.{FileToDownload, LocalP2PFile}
 
 import scala.collection.{BitSet, mutable}
@@ -36,6 +37,14 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
 
     /** Reference to the file */
     val p2PFile = LocalP2PFile.empty(fileDLing.fileInfo, localFile)
+
+    /** A writeable stream to the local file.
+      *
+      * One ''could'' change this method to (instead) pass `"rwd"` or `"rws"` flags,
+      * which would mean we write ''synchronously''. That shouldn't be necessary though.
+      */
+    val fileWriter = new RandomAccessFile(p2PFile.file, "rw")
+
 
     /** add seeders who respond to Pings,
       * remove on timeout or receiving invalid data
@@ -116,7 +125,7 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
     override def preStart(): Unit = potentialDownloadees foreach (_ ! GetAvblty(abbreviation))
 
     // SOMEDAY this should de-register me from all the event buses I'm subscribed to
-    override def postStop(): Unit = () // this is the default
+    override def postStop(): Unit = fileWriter.close()
 
     override def receive: Actor.Receive = LoggingReceive {
 
@@ -124,7 +133,8 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
         // TODO reconnect with everyone in swarm and check availabilities
         // This includes those in liveSeeders, liveLeechers, and the `quarantine`
 
-        case ChunkComplete(idx) =>
+        case ChunkCompleteData(idx, chunkData) =>
+            writeChunkData(idx, chunkData)
             attemptChunkDownload()
 
         // SOMEDAY publish completion to EventBus
@@ -162,6 +172,41 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
              */
             liveLeechers += Leecher(createFullMutableBitSet & avblty, sender()) /* the & is to convert immutable -> mutable */
             attemptChunkDownload()
+    }
+
+    /**
+      * Write received chunkData to the local filesystem iff it hashes correctly.
+      *
+      * We assume that the `ChunkDownloader` already verified that the `chunkData` are ''correct''.
+      *
+      * Note: An IOException here will crash the program.
+      * I don't really have any better ideas...retry?
+      * I'll address it if it comes up.
+      * <p/>
+      * Since the chunkData sent to the file downloader to write (viz. ''here''), there can
+      * (potentially) be multiple nodes from which this chunk is being concurrently downloaded,
+      * and there are no write conflicts. Also this will mean that there's no shared mutable
+      * state (viz. the local file) between the `ChunkDownloader` and its parent `FileDownloader`
+      * actor.
+      */
+    def writeChunkData(chunkIdx: Int, chunkData: Array[Byte]): Boolean = {
+
+        // maybe a previous ChunkDownloader sent us this data
+        if (p2PFile hasDataForChunk chunkIdx)
+            return false
+
+        log debug s"writing out all ${chunkData.length} bytes of chunk $chunkIdx"
+
+        // Seeking to offset beyond end-of-file ''does not'' change the file length.
+        // Writing beyond end-of-file ''does'' change the file length.
+        fileWriter.seek(chunkIdx * BYTES_PER_CHUNK)
+        fileWriter.write(chunkData)
+
+        /* in this way the chunk index is removed "atomically" from the perspective of the
+         * file downloading process
+         */
+        p2PFile.unavailableChunkIndexes.remove(chunkIdx)
+        true
     }
 
     def createFullMutableBitSet = mutable.BitSet(0 until numChunks: _*)

@@ -127,10 +127,12 @@ class FileDownloaderTestLiveAndDeadSeedersAndLeechers extends FileDownloaderTest
                         TODO is that true? If it is it represents shared mutable state
                         between the `FileDownloader` and the `ChunkDownloader`
 
-                        TODO This should be investigated
+                        TODO I'm midway through changing that
+                        by moving writeData(chunkBytes) from the `ChunkDownloader`
+                        to the `FileDownloader`
                     */
                     fdInstance.p2PFile.unavailableChunkIndexes.remove(i)
-                    fdActorRef ! ChunkComplete(i)
+//                    fdActorRef ! ChunkCompleteData(i)
                 }
             }
 
@@ -247,7 +249,7 @@ class FileDownloaderTestNotFullyAvailable extends FileDownloaderTest {
             "continuing download" should {
                 // we get everything we expect to receive from peers
                 availableChunksIndexes foreach { chunkIdx =>
-                    fdActorRef ! ChunkComplete(chunkIdx)
+//                    TODO make this work: fdActorRef ! ChunkCompleteData(chunkIdx)
                 }
                 "send the rest of the ChunkRequests" in {
                     numChunkDownloaders to availableChunksIndexes.last foreach { _ =>
@@ -316,7 +318,7 @@ class PeerTimeoutWithBackups extends FileDownloaderTest {
 
                 "only receive a response from one seeder" in {
 
-                    fdActorRef ! ChunkComplete(0)
+//                  TODO make this work  fdActorRef ! ChunkCompleteData(0)
                     quickly {
                         val possibilities = List(
                             ChunkRequest(fileInfo.abbreviation, 2),

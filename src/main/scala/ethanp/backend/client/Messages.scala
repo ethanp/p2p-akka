@@ -122,7 +122,7 @@ case object AddMeAsListener
 
 sealed trait ChunkStatus extends Serializable
 
-case class ChunkComplete(chunkIdx: Int) extends ChunkStatus
+case class ChunkCompleteData(chunkIdx: Int, chunkData: Array[Byte]) extends ChunkStatus
 
 case class ChunkDLFailed(chunkIdx: Int, peerPath: ActorRef, cause: FailureMechanism)
     extends ChunkStatus

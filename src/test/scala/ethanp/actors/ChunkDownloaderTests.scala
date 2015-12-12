@@ -1,8 +1,8 @@
 package ethanp.actors
 
-import java.io.{File, FileInputStream}
+import java.io.File
 
-import akka.testkit.{TestProbe, TestActorRef}
+import akka.testkit.{TestActorRef, TestProbe}
 import ethanp.backend.ChunkDownloader
 import ethanp.backend.client._
 import ethanp.file.LocalP2PFile
@@ -26,11 +26,13 @@ class BaseChunkDLTester extends BaseTester {
     /* Our ChunkDownloader-under-test is, responsible for the first chunk of the file.
      * There are 3 PIECES_PER_CHUNK (under current settings).
      */
-    val TEST_INDEX = 0
+    val testChunkIdx = 0
 
-    val chunkSize = input2TextP2P.fileInfo numBytesInChunk TEST_INDEX
+    val chunkSize = input2TextP2P.fileInfo numBytesInChunk testChunkIdx
 
-    val piecesInChunk = input2TextP2P.fileInfo numPiecesInChunk TEST_INDEX
+    val piecesInChunk = input2TextP2P.fileInfo numPiecesInChunk testChunkIdx
+
+    val invalidPieceData = Array[Byte](12, 32, 42)
 
     var parent = TestProbe()
 
@@ -42,7 +44,7 @@ class BaseChunkDLTester extends BaseTester {
     val chunkDownloaderRef = TestActorRef(
         ChunkDownloader.props(
             p2PFile = outputP2PFile,
-            chunkIdx = TEST_INDEX,
+            chunkIdx = testChunkIdx,
             peerRef = self
         ),
         parent.ref,
@@ -56,7 +58,7 @@ class BaseChunkDLTester extends BaseTester {
             expectSoon {
                 ChunkRequest(
                     infoAbbrev = outputP2PFile.fileInfo.abbreviation,
-                    chunkIdx = TEST_INDEX
+                    chunkIdx = testChunkIdx
                 )
             }
         }
@@ -95,7 +97,7 @@ class ChunkDLValidDataTest extends BaseChunkDLTester {
 
         "received first piece" should {
             "mark only first piece as received" in {
-                val bytes = input2TextP2P.readBytesForPiece(TEST_INDEX, 0).get
+                val bytes = input2TextP2P.readBytesForPiece(testChunkIdx, 0).get
                 chunkDownloaderRef ! Piece(0, bytes)
                 firstPieceShouldHaveBeenReceived()
             }
@@ -105,7 +107,7 @@ class ChunkDLValidDataTest extends BaseChunkDLTester {
             "mark all pieces off" in {
                 /* send the rest of the pieces over */
                 for (i <- 1 until piecesInChunk) {
-                    val bytes = input2TextP2P.readBytesForPiece(TEST_INDEX, i).get
+                    val bytes = input2TextP2P.readBytesForPiece(testChunkIdx, i).get
                     chunkDownloaderRef ! Piece(i, bytes)
                 }
                 allPiecesShouldHaveBeenReceived()
@@ -114,25 +116,30 @@ class ChunkDLValidDataTest extends BaseChunkDLTester {
                 // SOMEDAY still not sure this piece of the protocol will ever come in handy
                 // (because, the Client ALREADY KNOWS the chunk size from `FileInfo` object)
                 chunkDownloaderRef ! ChunkSuccess
-                parent.expectMsg(ChunkComplete(TEST_INDEX))
+                val chunkBytes = (0 until piecesInChunk) flatMap { idx =>
+                    input2TextP2P.readBytesForPiece(testChunkIdx, idx).get
+                }
+
+                parent.expectMsg(ChunkCompleteData(testChunkIdx, chunkBytes.toArray))
             }
-            "write chunk of CORRECT data to disk" in {
-                output1Txt should exist
-
-                /* open written file and real file */
-                val realFileReader = new FileInputStream(input2TextP2P.file)
-                val fileContentChecker = new FileInputStream(output1Txt)
-
-                val realData = new Array[Byte](chunkSize)
-                val writtenData = new Array[Byte](chunkSize)
-
-                /* read the contents */
-                fileContentChecker read writtenData
-                realFileReader read realData
-
-                /* ensure equality */
-                writtenData shouldEqual realData
-            }
+            // TODO move this to the FileDownloaderTests
+//            "write chunk of CORRECT data to disk" in {
+//                output1Txt should exist
+//
+//                /* open written file and real file */
+//                val realFileReader = new FileInputStream(input2TextP2P.file)
+//                val fileContentChecker = new FileInputStream(output1Txt)
+//
+//                val realData = new Array[Byte](chunkSize)
+//                val writtenData = new Array[Byte](chunkSize)
+//
+//                /* read the contents */
+//                fileContentChecker read writtenData
+//                realFileReader read realData
+//
+//                /* ensure equality */
+//                writtenData shouldEqual realData
+//            }
         }
     }
 }
@@ -140,10 +147,9 @@ class ChunkDLValidDataTest extends BaseChunkDLTester {
 class ChunkDLInvalidDataTest extends BaseChunkDLTester {
     "a ChunkDownloader" when {
         "receiving invalid data" should {
-            val fakeData = Array[Byte](12, 32, 42)
 
             /* send client the fake data */
-            for (i ← 0 to 2) chunkDownloaderRef ! Piece(i, fakeData)
+            for (i ← 0 to 2) chunkDownloaderRef ! Piece(i, invalidPieceData)
 
             "still check off pieces received" in {
                 quickly {
@@ -161,7 +167,7 @@ class ChunkDLInvalidDataTest extends BaseChunkDLTester {
             "notify parent of bad peer" in {
                 parent expectMsg {
                     ChunkDLFailed(
-                        chunkIdx = TEST_INDEX,
+                        chunkIdx = testChunkIdx,
                         peerPath = self,
                         cause = InvalidData
                     )
@@ -179,10 +185,9 @@ class ChunkDLInvalidDataTest extends BaseChunkDLTester {
 class ChunkDLTimeoutTest extends BaseChunkDLTester {
     "a ChunkDownloader" when {
         "timing out on a download" should {
-            val fakeData = Array(12.toByte, 32.toByte, 42.toByte)
 
             /* send client the fake data */
-            chunkDownloaderRef ! Piece(0, fakeData)
+            chunkDownloaderRef ! Piece(0, invalidPieceData)
 
             "notify parent of failure and peer" in {
                 // not being in an "in" block made this test fail?!

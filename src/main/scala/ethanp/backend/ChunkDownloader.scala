@@ -1,7 +1,5 @@
 package ethanp.backend
 
-import java.io.RandomAccessFile
-
 import akka.actor._
 import akka.event.LoggingReceive
 import ethanp.backend.client._
@@ -71,60 +69,24 @@ class ChunkDownloader(p2PFile: LocalP2PFile, chunkIdx: Int, peerRef: ActorRef)
          * so I'm leaving it in here for now.
          */
         case ChunkSuccess =>
-            val success = writeChunk()
-            if (success) chunkXferSuccess()
-            else chunkXferFailed(cause = InvalidData)
-            listeners foreach (_ ! ChunkComplete(chunkIdx))
+            def dataAlreadyWritten = p2PFile hasDataForChunk chunkIdx
+            def invalidChunkHash = (Sha2 hashOf chunkData) != p2PFile.fileInfo.chunkHashes(chunkIdx)
+
+            // precondition: data could already be there because another ChunkDownloader wrote it
+            if (dataAlreadyWritten) {
+                log warning s"data for chunk $chunkIdx for ${p2PFile.file.getName} was already written"
+            }
+            else if (invalidChunkHash) {
+                log error s"data for chunk $chunkIdx for ${p2PFile.file.getName} was invalid"
+                chunkXferFailed(cause = InvalidData)
+            }
+            else chunkXferSuccess()
 
         case AddMeAsListener =>
             listeners += sender
     }
 
-    /**
-      * Write the downloaded Chunk to the local filesystem iff it hashes correctly.
-      *
-      * Note: An IOException here will crash the program. I don't really have any better ideas...retry?
-      * I'll address it if it comes up
-      */
-    // TODO this is actually, problematic! the chunkData should be sent to the file downloader
-    // to write (by this method), so that there can (potentially) be multiple nodes from which
-    // this chunk is being concurrently downloaded, and there are no write conflicts. Also this
-    // will mean that there's no shared state (the local file) between this actor and its parent
-    // `FileDownloader` object.
-    def writeChunk(): Boolean = {
-
-        // precondition: data shouldn't already be there
-        if (p2PFile hasDataForChunk chunkIdx)
-            throw new IllegalStateException()
-
-        if ((Sha2 hashOf chunkData) == p2PFile.fileInfo.chunkHashes(chunkIdx)) {
-            log.debug(s"writing out all ${chunkData.length} bytes of chunk $chunkIdx")
-
-            /*
-             * Use rwd or rws to write synchronously.
-             * Until I have (hard to debug) issues, I'm going with writing asynchronously.
-             *
-             * I'm assuming this creates its own file descriptor, so other threads can't
-             * this guy somewhere else before I write out the data here
-             */
-            val out = new RandomAccessFile(p2PFile.file, "rw")
-
-            // Setting offset beyond end-of-file does not change the file length.
-            // Writing beyond end-of-file does change the file length.
-            out.seek(chunkIdx * BYTES_PER_CHUNK)
-            out.write(chunkData)
-            out.close()
-
-            p2PFile.unavailableChunkIndexes.remove(chunkIdx)
-            true
-        }
-        else {
-            log error s"$this rcvd chunk data that didn't hash correctly"
-            false
-        }
-    }
-
-    def chunkXferSuccess() = notifyListenersAndDie(ChunkComplete(chunkIdx))
+    def chunkXferSuccess() = notifyListenersAndDie(ChunkCompleteData(chunkIdx, chunkData))
 
     def chunkXferFailed(cause: FailureMechanism) = notifyListenersAndDie(ChunkDLFailed(chunkIdx, peerRef, cause))
 
