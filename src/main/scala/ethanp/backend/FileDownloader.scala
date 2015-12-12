@@ -43,7 +43,7 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
       * One ''could'' change this method to (instead) pass `"rwd"` or `"rws"` flags,
       * which would mean we write ''synchronously''. That shouldn't be necessary though.
       */
-    val fileWriter = new RandomAccessFile(p2PFile.file, "rw")
+    lazy val fileWriter = new RandomAccessFile(p2PFile.file, "rw")
 
 
     /** add seeders who respond to Pings,
@@ -98,16 +98,16 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
 
     def peersWhoHaventResponded = potentialDownloadees -- peersWhoResponded
 
-    def liveSeederRefs = liveLeechers map (_.actorRef)
+    def liveSeederRefs = liveSeeders map (_.actorRef)
 
     def underlyingRefs[Pear <: FilePeer](set: Set[Pear]) = set map (_.actorRef)
 
     def quarantinePeer(actorRef: ActorRef): Unit = {
-        for (peer <- liveLeechers if peer.actorRef == actorRef) {
+        for (peer ← liveLeechers if peer.actorRef == actorRef) {
             liveLeechers -= peer
             quarantine += peer
         }
-        for (peer <- liveSeeders if peer.actorRef == actorRef) {
+        for (peer ← liveSeeders if peer.actorRef == actorRef) {
             liveSeeders -= peer
             quarantine += peer
         }
@@ -124,17 +124,17 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
       */
     override def preStart(): Unit = potentialDownloadees foreach (_ ! GetAvblty(abbreviation))
 
-    // SOMEDAY this should de-register me from all the event buses I'm subscribed to
+    // SOMEDAY this should also de-register me from all the event buses I'm subscribed to
     override def postStop(): Unit = fileWriter.close()
 
     override def receive: Actor.Receive = LoggingReceive {
 
         case ReceiveTimeout =>
-        // TODO reconnect with everyone in swarm and check availabilities
-        // This includes those in liveSeeders, liveLeechers, and the `quarantine`
+            // TODO reconnect with everyone in swarm and check availabilities
+            // This includes those in liveSeeders, liveLeechers, and the `quarantine`
 
-        case ChunkCompleteData(idx, chunkData) =>
-            writeChunkData(idx, chunkData)
+        case ChunkCompleteData(chunkIdx, chunkData) =>
+            writeChunkData(chunkIdx, chunkData)
             attemptChunkDownload()
 
         // SOMEDAY publish completion to EventBus

@@ -112,34 +112,16 @@ class ChunkDLValidDataTest extends BaseChunkDLTester {
                 }
                 allPiecesShouldHaveBeenReceived()
             }
+            /* NOTE: One CANNOT just run this 'unit' test.
+             * You must run the entire class for this test to pass.
+             */
             "notify listeners of download success" in {
                 // SOMEDAY still not sure this piece of the protocol will ever come in handy
                 // (because, the Client ALREADY KNOWS the chunk size from `FileInfo` object)
                 chunkDownloaderRef ! ChunkSuccess
-                val chunkBytes = (0 until piecesInChunk) flatMap { idx =>
-                    input2TextP2P.readBytesForPiece(testChunkIdx, idx).get
-                }
 
-                parent.expectMsg(ChunkCompleteData(testChunkIdx, chunkBytes.toArray))
+                parent.expectMsgClass(classOf[ChunkCompleteData])
             }
-            // TODO move this to the FileDownloaderTests
-//            "write chunk of CORRECT data to disk" in {
-//                output1Txt should exist
-//
-//                /* open written file and real file */
-//                val realFileReader = new FileInputStream(input2TextP2P.file)
-//                val fileContentChecker = new FileInputStream(output1Txt)
-//
-//                val realData = new Array[Byte](chunkSize)
-//                val writtenData = new Array[Byte](chunkSize)
-//
-//                /* read the contents */
-//                fileContentChecker read writtenData
-//                realFileReader read realData
-//
-//                /* ensure equality */
-//                writtenData shouldEqual realData
-//            }
         }
     }
 }

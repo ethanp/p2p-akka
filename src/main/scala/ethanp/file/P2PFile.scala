@@ -153,8 +153,7 @@ object LocalP2PFile {
         )
     }
 
-    /**
-      * Create a vector of the Sha2 hashes of each Chunk of the given file,
+    /** Create a vector of the Sha2 hashes of each Chunk of the given file,
       * without ever holding more than a single chunk in memory.
       *
       * @param file the file whose Chunks to hash using Sha2
@@ -163,13 +162,13 @@ object LocalP2PFile {
     def hashTheFile(file: File): Vector[Sha2] = {
         var chunkHashes: mutable.MutableList[Sha2] = mutable.MutableList.empty
         readFileByChunk(file)(
-            useFileData = (buffer, fullPortion, _) => chunkHashes += (Sha2 hashOf (buffer take fullPortion)),
+            useFileData = (chunkBuffer, bufferSize, _) =>
+                chunkHashes += (Sha2 hashOf (chunkBuffer take bufferSize)),
             onComplete = chunkHashes.toVector
         )
     }
 
-    /**
-      * Reads the file chunk by chunk and executes the given callback.
+    /** Reads the file chunk by chunk and executes the given callback.
       * Returns whatever you want it to.
       *
       * SOMEDAY this SHOULD be a `foldFileByChunk` method that deals with an
@@ -187,7 +186,7 @@ object LocalP2PFile {
         val fileInputStream = new BufferedInputStream(new FileInputStream(file))
         val chunkBuffer = new Array[Byte](BYTES_PER_CHUNK)
         var bytesRead = -1
-        var offsetInChunk = 0
+        var bytesInBuffer = 0
         var totalRead = 0
 
         while (totalRead < file.length()) {
@@ -197,14 +196,14 @@ object LocalP2PFile {
             // START AT first unfilled byte of `chunkBuffer`
             // AT MOST  only the remaining bytes in the Chunk
             // RETURNS  a non-negative integer
-            bytesRead = fileInputStream.read(chunkBuffer, offsetInChunk, BYTES_PER_CHUNK - offsetInChunk)
+            bytesRead = fileInputStream.read(chunkBuffer, bytesInBuffer, BYTES_PER_CHUNK - bytesInBuffer)
 
             totalRead += bytesRead
-            offsetInChunk += bytesRead
+            bytesInBuffer += bytesRead
 
-            if (offsetInChunk == chunkBuffer.length || totalRead >= file.length()) {
-                useFileData(chunkBuffer, offsetInChunk, totalRead)
-                offsetInChunk = 0
+            if (bytesInBuffer == chunkBuffer.length || totalRead >= file.length()) {
+                useFileData(chunkBuffer, bytesInBuffer, totalRead)
+                bytesInBuffer = 0
             }
         }
         fileInputStream.close()
