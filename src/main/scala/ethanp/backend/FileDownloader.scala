@@ -37,19 +37,26 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
     /** Reference to the file */
     val p2PFile = LocalP2PFile.empty(fileDLing.fileInfo, localFile)
 
-    /** add seeders who respond to Pings, remove on timeout */
+    /** add seeders who respond to Pings,
+      * remove on timeout or receiving invalid data
+      */
     var liveSeeders = Set.empty[Seeder]
 
-    /** add leechers who respond to Pings, remove on timeout */
+    /** add leechers who respond to Pings,
+      * remove on timeout or receiving invalid data
+      */
     var liveLeechers = Set.empty[Leecher]
 
-    /** for SOMEDAY speed calculations */
-    var bytesDLedPastSecond = 0
+    /** peers we've timed-out upon or received invalid data from recently */
+    var quarantine = Set.empty[FilePeer]
 
     /** children actors who are ''supposed'' to be busy downloading chunks */
     val chunkDownloaders = mutable.Set.empty[ActorRef]
-    val notStartedChunks = fullMutableBitSet
-    val speedometer = context.system.scheduler.schedule(initialDelay = 1 second, interval = 1 second) {
+    val notStartedChunks = createFullMutableBitSet
+
+    /** for SOMEDAY speed calculations */
+    var bytesDLedPastSecond = 0
+    context.system.scheduler.schedule(initialDelay = 1 second, interval = 1 second) {
         bytesDLedPastSecond = 0
     }
 
@@ -62,18 +69,27 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
     /** Reset upon chunk download initiation */
     var retryDownloadInterval = 1 minute
 
-    /** peers we've timed-out upon recently */
-    var quarantine = Set.empty[FilePeer]
+    var downloadTimeoutTimer = createDownloadTimeoutTimer
+
+    def createDownloadTimeoutTimer = context.system.scheduler.scheduleOnce(
+        delay = retryDownloadInterval,
+        receiver = self,
+        message = ReceiveTimeout
+    )
+
+    def resetDownloadTimeoutTimer(): Unit = {
+        downloadTimeoutTimer.cancel()
+        downloadTimeoutTimer = createDownloadTimeoutTimer
+    }
 
     // SOMEDAY should updated periodically after new queries of the Trackers
     var potentialDownloadees: Set[ActorRef] = fileDLing.seeders ++ fileDLing.leechers
 
+    def peersWhoResponded = List(liveLeechers, liveSeeders, quarantine) flatMap (_ map (_ actorRef))
 
-    def peersWhoHaventResponded = potentialDownloadees -- liveSeederRefs -- liveLeecherRefs
+    def peersWhoHaventResponded = potentialDownloadees -- peersWhoResponded
 
-    def liveSeederRefs = liveSeeders map (_.actorRef)
-
-    def liveLeecherRefs = liveLeechers map (_.actorRef)
+    def underlyingRefs[Pear <: FilePeer](set: Set[Pear]) = set map (_.actorRef)
 
     def quarantinePeer(actorRef: ActorRef): Unit = {
         for (peer <- liveLeechers if peer.actorRef == actorRef) {
@@ -86,8 +102,7 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
         }
     }
 
-    /**
-      * called by Akka framework when this Actor is asynchronously started
+    /** called by Akka framework when this Actor is asynchronously started
       *
       * "Ping" everyone the Tracker told us is 'involved with' this file
       *
@@ -105,6 +120,7 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
 
         case ReceiveTimeout =>
         // TODO reconnect with everyone in swarm and check availabilities
+        // This includes those in liveSeeders, liveLeechers, and the `quarantine`
 
         case ChunkComplete(idx) =>
             attemptChunkDownload()
@@ -112,27 +128,24 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
         // SOMEDAY publish completion to EventBus
         // so that interested peers know we now have this chunk
 
-        /**
-          * Received *after* the ChunkDownloader tried retrying a few times
+        /** Received *after* the ChunkDownloader tried retrying a few times
           */
-        case failureMessage@ChunkDLFailed(idx, peerRef, cause) =>
+        case failureMessage@ChunkDLFailed(idx, peerRef, cause) => cause match {
+            case TransferTimeout => listeners foreach (_ ! failureMessage)
+            case InvalidData => log debug s"Received invalid data from $peerRef"
+        }
             quarantinePeer(peerRef)
-            cause match {
-                case TransferTimeout => listeners foreach (_ ! failureMessage)
-                case InvalidData => log debug s"Received invalid data from $peerRef"
-            }
 
         // comes from ChunkDownloader
         case DownloadSpeed(numBytes) =>
             bytesDLedPastSecond += numBytes
         // SOMEDAY update the peer-specific transfer speed (for dl priority) on the FilePeer object
 
-        /**
-          * This comes from this node's Client actor who wants to know how much of the file is complete.
+        /** This comes from this node's Client actor who wants to know how much of the file is complete.
           * Tell her we have everything, except for the incompleteChunks.
           */
         case GetAvblty(abbrev) => if (abbrev == abbreviation) {
-            val avblChunks: BitSet = fullMutableBitSet &~ incompleteChunks
+            val avblChunks: BitSet = createFullMutableBitSet &~ incompleteChunks
             sender ! avblChunks
         }
 
@@ -145,19 +158,31 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
                 val bus = ActorEventBus()       // or however you do it
                 bus.subscribe(this, sender())   // or however you do it
              */
-            liveLeechers += Leecher(fullMutableBitSet & avblty, sender()) /* the & is to convert immutable -> mutable */
+            liveLeechers += Leecher(createFullMutableBitSet & avblty, sender()) /* the & is to convert immutable -> mutable */
             attemptChunkDownload()
     }
 
-    def fullMutableBitSet = mutable.BitSet(0 until numChunks: _*)
+    def createFullMutableBitSet = mutable.BitSet(0 until numChunks: _*)
 
+    /** Reset the file-level download timeout `retryDownloadInterval`.
+      *
+      * If there are chunks we still have to download, and there aren't enough
+      * concurrent chunk downloads in-progress, find the FIRST available chunk
+      * we still need and spawn a `ChunkDownloader` to retrieve it from the
+      * NEXT PEER.
+      *
+      * (The "next peer" algorithm can be plugged in separately, currently it
+      * randomly chooses a peer reportedly owning the chunk.)
+      *
+      * If we've finished downloading, inform the `listeners`, and take a
+      * `PoisonPill`.
+      */
     def attemptChunkDownload(): Unit = {
-        context.setReceiveTimeout(retryDownloadInterval)
+        resetDownloadTimeoutTimer()
         // kick-off an unstarted chunk
         if (notStartedChunks.nonEmpty) {
             if (chunkDownloaders.size >= maxConcurrentChunks) return
-            val chunks = availableChunks
-            (notStartedChunks & chunks).headOption match {
+            (notStartedChunks & availableChunks).headOption match {
                 case Some(nextIdx) =>
                     notStartedChunks.remove(nextIdx)
                     val peer = nextToDLFrom(nextIdx)
@@ -174,46 +199,48 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
             log info s"all chunks started, waiting on ${incompleteChunks.size} transfers to complete"
         } else {
             /* transfer is complete */
-            speedometer.cancel() // may be unnecessary since I'm poisoning myself anyway
             log warning s"transfer of $filename complete!"
-            context.parent ! DownloadSuccess(filename)
+            listeners foreach (_ ! DownloadSuccess(filename))
             self ! PoisonPill
         }
     }
 
     /** @return BitSet containing "1"s for chunks that other peers are known to have */
     def availableChunks: BitSet =
-        if (liveSeeders.nonEmpty) fullMutableBitSet
+        if (liveSeeders.nonEmpty) createFullMutableBitSet
         else (liveLeechers foldLeft emptyMutableBitSet) (_ | _.avbl)
 
     def emptyMutableBitSet = new mutable.BitSet(numChunks)
 
-    /**
-      * Spawn a ChunkDownloader to download this FileDownloader's File
+    /** Spawn a ChunkDownloader to download this FileDownloader's File
       *
       * @param chunkIdx which chunk index to download
       * @param peerRef which ActorRef to download from
       */
-    def spawnChunkDownloader(chunkIdx: Int, peerRef: ActorRef): ActorRef = {
+    def spawnChunkDownloader(chunkIdx: Int, peerRef: ActorRef): ActorRef =
         context.actorOf(
             Props(classOf[ChunkDownloader], p2PFile, chunkIdx, peerRef),
             name = s"chunk-$chunkIdx"
         )
-    }
 
-    // I could also use the priority scores (which Seeders & Leechers have) instead
-    // but I haven't implemented transfer speed updating
-    def nextToDLFrom(nextIdx: Int): FilePeer = randomPeerOwningChunk(nextIdx)
+    /* SOMEDAY use the priority scores (which Seeders & Leechers have) instead
+       but I haven't implemented transfer speed updating */
 
-    def randomPeerOwningChunk(idx: Int): FilePeer = {
-        val validLeechers = liveLeechers filter (_ hasChunk idx)
+    /** configurable "next peer" algorithm, currently downloads from a random peer
+      * owning the chunk at the given `nextIdx` */
+    def nextToDLFrom(chunkIdx: Int): FilePeer = randomPeerOwningChunk(chunkIdx)
+
+    def randomPeerOwningChunk(chunkIdx: Int): FilePeer = {
+        val validLeechers = liveLeechers filter (_ hasChunk chunkIdx)
         val validPeers = (liveSeeders ++ validLeechers).toVector
         val peerIdx = util.Random.nextInt(validPeers.size)
         validPeers(peerIdx)
     }
 
-    /** check-lists of what needs to be done */
-    def incompleteChunks = p2PFile.unavailableChunkIndexes
+    /** Chunk indices that have not been written to disk yet.
+      * There may be outstanding `ChunkDownloader`s for these indices.
+      */
+    def incompleteChunks: BitSet = p2PFile.unavailableChunkIndexes.toImmutable
 }
 
 object FileDownloader {

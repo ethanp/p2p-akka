@@ -8,6 +8,7 @@ import scala.collection.mutable
   * Ethan Petuchowski
   * 7/4/15
   */
+/* SOMEDAY actually USE the `FilePeer.priorityScore` */
 /** They're ordered by how desirable they are to download from */
 sealed abstract class FilePeer(val actorRef: ActorRef) extends Ordered[FilePeer] {
     val UNKNOWN = -1
@@ -35,10 +36,10 @@ sealed abstract class FilePeer(val actorRef: ActorRef) extends Ordered[FilePeer]
     }
 }
 
-case class Seeder(actorRef: ActorRef) extends FilePeer(actorRef) {
+case class Seeder(override val actorRef: ActorRef) extends FilePeer(actorRef) {
     override def hasChunk(idx: Int): Boolean = true
 }
 
-case class Leecher(avbl: mutable.BitSet, actorRef: ActorRef) extends FilePeer(actorRef) {
+case class Leecher(avbl: mutable.BitSet, override val actorRef: ActorRef) extends FilePeer(actorRef) {
     override def hasChunk(idx: Int) = avbl contains idx
 }
