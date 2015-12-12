@@ -27,6 +27,7 @@ class FileDownloaderTest extends BaseTester {
 
     val input2Info = input2TextP2P.fileInfo
     val downloadDir = new File(s"test_downloads-${this.getClass.getSimpleName}")
+    downloadDir.mkdirs()
 
     /* Requests that the file or directory denoted by this abstract
      * pathname be deleted when the virtual machine terminates.
@@ -62,8 +63,10 @@ class FileDownloaderTestLiveAndDeadSeedersAndLeechers extends FileDownloaderTest
         val (liveLeechers, deadLeechers) = splitAtIndex(leechers, 2)
         val livePeers = liveSeeders ++ liveLeechers
         val deadPeers = deadSeeders ++ deadLeechers
-
         val input2FTD = FileToDownload(input2Info, seeders, leechers)
+        val downloadedFile = new File(downloadDir, input2FTD.fileInfo.filename)
+        if (downloadedFile.exists()) downloadedFile.delete()
+        downloadedFile.deleteOnExit()
         val parent = TestProbe()
         val fdActorRef = TestActorRef(
             props = FileDownloader.props(input2FTD, downloadDir),
@@ -135,33 +138,15 @@ class FileDownloaderTestLiveAndDeadSeedersAndLeechers extends FileDownloaderTest
                 }
                 fdInstance.incompleteChunks shouldBe empty
             }
-            /*
             "write chunk of CORRECT data to disk" in {
-                output1Txt should exist
+                val realFileData = io.Source.fromFile(input2TextP2P.file)
+                val dlFileData = io.Source.fromFile(downloadedFile)
 
-                /* open written file and real file */
-                val realFileReader = new FileInputStream(input2TextP2P.file)
-                val fileContentChecker = new FileInputStream(output1Txt)
-
-                val realData = new Array[Byte](chunkSize)
-                val writtenData = new Array[Byte](chunkSize)
-
-                /* read the contents */
-                fileContentChecker read writtenData
-                realFileReader read realData
-
-                /* ensure equality */
-                writtenData shouldEqual realData
-
-                /* or alternatively */
-//                val chunkBytes = (0 until piecesInChunk) flatMap { idx =>
-//                    input2TextP2P.readBytesForPiece(testChunkIdx, idx).get
-//                }
-
+                downloadedFile should exist
+                realFileData.mkString shouldEqual dlFileData.mkString
             }
-            */
             "inform `parent` of download success" in {
-                parent expectMsg { // TODO I'm getting a `ChunkDLFailed` instead
+                parent expectMsg {
                     DownloadSuccess(input2Info.filename)
                 }
             }

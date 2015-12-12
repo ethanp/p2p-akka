@@ -30,7 +30,7 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
     val localFile = new File(downloadDir, filename)
 
     /* crash this actor if the file already exists */
-    if (localFile.exists()) {
+    if (!localFile.createNewFile()) {
         log error s"you already have $filename in your filesystem!"
         context stop self
     }
