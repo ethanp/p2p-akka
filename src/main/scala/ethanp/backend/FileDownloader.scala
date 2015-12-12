@@ -98,16 +98,17 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
 
     def peersWhoHaventResponded = potentialDownloadees -- peersWhoResponded
 
-    def liveSeederRefs = liveSeeders map (_.actorRef)
-
     def underlyingRefs[Pear <: FilePeer](set: Set[Pear]) = set map (_.actorRef)
 
     def quarantinePeer(actorRef: ActorRef): Unit = {
-        for (peer ← liveLeechers if peer.actorRef == actorRef) {
+
+        // This was my way to implement "break" from the loop when the actorRef is found.
+        // SOMEDAY I would like to find a way to implement both of these loops in one go
+        liveLeechers.find(_.actorRef == actorRef).foreach { peer =>
             liveLeechers -= peer
             quarantine += peer
         }
-        for (peer ← liveSeeders if peer.actorRef == actorRef) {
+        liveSeeders.find(_.actorRef == actorRef).foreach { peer =>
             liveSeeders -= peer
             quarantine += peer
         }

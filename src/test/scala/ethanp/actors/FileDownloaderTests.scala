@@ -3,7 +3,7 @@ package ethanp.actors
 import java.io.File
 
 import akka.actor.{ActorRef, Props}
-import akka.testkit.{TestProbe, TestActorRef}
+import akka.testkit.{TestActorRef, TestProbe}
 import ethanp.actors.BaseTester.ForwardingActor
 import ethanp.backend.client._
 import ethanp.backend.{FileDownloader, Leecher}
@@ -38,6 +38,10 @@ class FileDownloaderTest extends BaseTester {
      */
     downloadDir.deleteOnExit()
 
+    def bytesForChunk(chunkIdx: Int): Array[Byte] = {
+        val pieces = (0 until input2Info.numPiecesInChunk(chunkIdx)).toArray
+        pieces flatMap { input2TextP2P.readBytesForPiece(chunkIdx, _).get }
+    }
 }
 
 /**
@@ -59,10 +63,10 @@ class FileDownloaderTestLiveAndDeadSeedersAndLeechers extends FileDownloaderTest
         val livePeers = liveSeeders ++ liveLeechers
         val deadPeers = deadSeeders ++ deadLeechers
 
-        val fileToDownload = FileToDownload(input2Info, seeders, leechers)
+        val input2FTD = FileToDownload(input2Info, seeders, leechers)
         val parent = TestProbe()
         val fdActorRef = TestActorRef(
-            props = FileDownloader.props(fileToDownload, downloadDir),
+            props = FileDownloader.props(input2FTD, downloadDir),
             supervisor = parent.ref,
             name = "FileDownloaderUnderTest"
         )
@@ -83,34 +87,38 @@ class FileDownloaderTestLiveAndDeadSeedersAndLeechers extends FileDownloaderTest
         /* inform it of avbl of leechers */
 
 
-        def assignAvailabilities(f: (mutable.BitSet, ActorRef) => Any): Any = {
+        def foreachLeecher(f: (mutable.BitSet, ActorRef) => Any): Any = {
             var avbl = new mutable.BitSet(input2Info.numChunks)
             for ((leecher, idx) ← liveLeechers.zipWithIndex) {
-                avbl += idx
-                f(avbl, leecher)
+                f(avbl += idx, leecher)
             }
         }
 
-        assignAvailabilities { (avbl, leecher) =>
+        foreachLeecher { (avbl, leecher) =>
             fdActorRef.tell(Leeching(avbl.toImmutable), leecher)
         }
 
         "getting chunk availabilities" should {
             "believe seeders are seeders" in {
-                fdInstance.liveSeederRefs shouldEqual liveSeeders
+                fdInstance.liveSeeders map (_.actorRef) shouldEqual liveSeeders
             }
             "know avbl of leechers" in {
-                assignAvailabilities { (avbl, leecher) =>
+                foreachLeecher { (avbl, leecher) =>
                     fdInstance.liveLeechers should contain(Leecher(avbl, leecher))
                 }
             }
             "leave aside peers who don't respond" in {
-                fdInstance.peersWhoHaventResponded.size shouldEqual deadPeers.size
+                fdInstance.peersWhoHaventResponded shouldEqual deadPeers
             }
 
             "spawn the right number of chunk downloaders" in {
                 val numConcurrentDLs = Seq(fdInstance.maxConcurrentChunks, livePeers.size).min
                 fdInstance.chunkDownloaders should have size numConcurrentDLs
+
+                /* These are sent by the spawned ChunkDownloaders to the "peers",
+                 * and those peers all happen to be this test. So we need to
+                 * explicitly ignore them. There may be a better way to handle this.
+                 */
                 quickly {
                     for (i ← 1 to input2Info.numChunks) {
                         expectMsgClass(classOf[ChunkRequest])
@@ -123,23 +131,10 @@ class FileDownloaderTestLiveAndDeadSeedersAndLeechers extends FileDownloaderTest
             "check off chunks as they arrive in random order" in {
                 val shuffledIdxs = util.Random.shuffle(Vector(0 until input2Info.numChunks: _*))
                 for (i ← shuffledIdxs) {
-                    /*
-                        This is what the `ChunkDownloader` WOULD be doing,
-                        but I'M sending the `ChunkComplete`s now
-                        instead of having a `ChunkDownloader`.
-
-                        TODO is that true? If it is it represents shared mutable state
-                        between the `FileDownloader` and the `ChunkDownloader`
-
-                        TODO I'm midway through changing that
-                        by moving writeData(chunkBytes) from the `ChunkDownloader`
-                        to the `FileDownloader`
-                    */
-                    fdInstance.p2PFile.unavailableChunkIndexes.remove(i)
-//                    fdActorRef ! ChunkCompleteData(i)
+                    fdActorRef ! ChunkCompleteData(i, bytesForChunk(i))
                 }
+                fdInstance.incompleteChunks shouldBe empty
             }
-            /* TODO figure out where to put this in this file */
             /*
             "write chunk of CORRECT data to disk" in {
                 output1Txt should exist
