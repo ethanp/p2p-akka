@@ -100,7 +100,7 @@ case class LocalP2PFile(
       * @param pieceIdx which Piece to read within that Chunk
       * @return either the desired Piece's data, or a `ReadFailedException`
       */
-    def getPiece(chunkIdx: Int, pieceIdx: Int): Try[Array[Byte]] = {
+    def readBytesForPiece(chunkIdx: Int, pieceIdx: Int): Try[Array[Byte]] = {
         val fileStream = new RandomAccessFile(file, "r")
         val firstByteLoc = chunkIdx * BYTES_PER_CHUNK + pieceIdx * BYTES_PER_PIECE
         val pieceLen = Math.min(BYTES_PER_PIECE, fileInfo.fileLength - firstByteLoc)

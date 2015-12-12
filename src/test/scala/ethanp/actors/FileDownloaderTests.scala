@@ -25,7 +25,7 @@ class FileDownloaderTest extends BaseTester {
     /* LowPriorityTodo keep tests at a high level
      * to make refactoring simpler */
 
-    val fileInfo = inputTextP2P.fileInfo
+    val fileInfo = input2TextP2P.fileInfo
     val downloadDir = new File(s"test_downloads-${this.getClass.getSimpleName}")
 
     /*

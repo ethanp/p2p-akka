@@ -24,10 +24,10 @@ class BaseTester
     with Matchers //  e.g. shouldBe, have length, startWith, include, etc.
     with BeforeAndAfterAll // allow beforeAll and afterAll methods
     with Inside /* allows `inside (caseClass) { case CaseClass(abcd) => abcd shouldBe x }` */ {
-    val (testText, testTextLoc) = "test" -> "testfiles/Test1.txt"
-    val (inputText, inputTextLoc) = "test2" -> "testfiles/input2.txt"
-    val testTextP2P = LocalP2PFile.loadFile(testText, testTextLoc)
-    val inputTextP2P = LocalP2PFile.loadFile(inputText, inputTextLoc)
+    val (test1, test1TextLoc) = "test1" -> "testfiles/Test1.txt"
+    val (test2, input2TextLoc) = "test2" -> "testfiles/input2.txt"
+    val testTextP2P = LocalP2PFile.loadFile(test1, test1TextLoc)
+    val input2TextP2P = LocalP2PFile.loadFile(test2, input2TextLoc)
     val bouncers = (1 to 2).map(i => system.actorOf(Props(classOf[ForwardingActor], self)))
     implicit val duration = 300 millis
 

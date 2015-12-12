@@ -89,6 +89,8 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
 
     def peersWhoHaventResponded = potentialDownloadees -- peersWhoResponded
 
+    def liveSeederRefs = liveLeechers map (_.actorRef)
+
     def underlyingRefs[Pear <: FilePeer](set: Set[Pear]) = set map (_.actorRef)
 
     def quarantinePeer(actorRef: ActorRef): Unit = {
@@ -219,7 +221,7 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
       */
     def spawnChunkDownloader(chunkIdx: Int, peerRef: ActorRef): ActorRef =
         context.actorOf(
-            Props(classOf[ChunkDownloader], p2PFile, chunkIdx, peerRef),
+            ChunkDownloader.props(p2PFile, chunkIdx, peerRef),
             name = s"chunk-$chunkIdx"
         )
 

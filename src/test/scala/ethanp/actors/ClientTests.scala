@@ -25,7 +25,7 @@ class ClientTests extends BaseTester {
         }
         "load file and inform all trackers" in {
             quickly {
-                clientRef ! LoadFile(testTextLoc, testText)
+                clientRef ! LoadFile(test1TextLoc, test1)
                 val iHave = InformTrackerIHave(testTextP2P.fileInfo)
                 expectMsgAllOf(iHave, iHave)
             }

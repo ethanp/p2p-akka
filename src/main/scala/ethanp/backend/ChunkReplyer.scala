@@ -48,7 +48,7 @@ class ChunkReplyer(localP2PFile: LocalP2PFile, replyRate: Rate) extends Actor wi
 
         /* send each piece */
         for (pieceIdx ← 0 until numPieces) {
-            localP2PFile.getPiece(reply.chunkIdx, pieceIdx) match {
+            localP2PFile.readBytesForPiece(reply.chunkIdx, pieceIdx) match {
                 case Success(pieceData) =>
                     uploadThrottler ! Piece(pieceIdx, pieceData)
 

@@ -49,8 +49,8 @@ class ChunkDownloader(p2PFile: LocalP2PFile, chunkIdx: Int, peerRef: ActorRef)
 
     override def receive: Actor.Receive = LoggingReceive {
 
+        // SOMEDAY inform listeners for bandwidth calculation
         case Piece(pieceIdx, data) =>
-            //            listeners.foreach(_ ! DownloadSpeed(data.length))
             piecesRcvd(pieceIdx) = true
             saveData(data, pieceIdx)
 
@@ -139,4 +139,9 @@ class ChunkDownloader(p2PFile: LocalP2PFile, chunkIdx: Int, peerRef: ActorRef)
             chunkData(pieceIdx * BYTES_PER_PIECE + i) = b
         }
     }
+}
+
+object ChunkDownloader {
+    def props(p2PFile: LocalP2PFile, chunkIdx: Int, peerRef: ActorRef) =
+        Props(new ChunkDownloader(p2PFile, chunkIdx, peerRef))
 }
