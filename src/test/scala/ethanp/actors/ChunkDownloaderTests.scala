@@ -2,7 +2,7 @@ package ethanp.actors
 
 import java.io.{File, FileInputStream}
 
-import akka.testkit.TestActorRef
+import akka.testkit.{TestProbe, TestActorRef}
 import ethanp.backend.ChunkDownloader
 import ethanp.backend.client._
 import ethanp.file.LocalP2PFile
@@ -32,18 +32,22 @@ class BaseChunkDLTester extends BaseTester {
 
     val piecesInChunk = input2TextP2P.fileInfo numPiecesInChunk TEST_INDEX
 
+    var parent = TestProbe()
+
     /* Create a ChunkDownloader to test
      *
      * Note that the ChunkDownloader' parent (viz. `self`) is
      * _automatically_ added to `listeners`.
      */
-    val chunkDownloaderRef = TestActorRef {
+    val chunkDownloaderRef = TestActorRef(
         ChunkDownloader.props(
             p2PFile = outputP2PFile,
             chunkIdx = TEST_INDEX,
             peerRef = self
-        )
-    }
+        ),
+        parent.ref,
+        "ChunkDownloader-UnderTest"
+    )
 
     val chunkDownloaderPtr: ChunkDownloader = chunkDownloaderRef.underlyingActor
 
@@ -83,27 +87,34 @@ class BaseChunkDLTester extends BaseTester {
 class ChunkDLValidDataTest extends BaseChunkDLTester {
 
     "a ChunkDownloader" when {
-        "receiving valid pieces" should {
-            "start with no pieces" in {
+        "starting up" should {
+            "have no pieces" in {
                 noPiecesShouldHaveBeenReceived()
             }
-            "mark first piece received (and only it) off" in {
+        }
+
+        "received first piece" should {
+            "mark only first piece as received" in {
                 val bytes = input2TextP2P.readBytesForPiece(TEST_INDEX, 0).get
                 chunkDownloaderRef ! Piece(0, bytes)
                 firstPieceShouldHaveBeenReceived()
             }
-            "mark rest of pieces off" in {
+        }
+
+        "received all pieces" should {
+            "mark all pieces off" in {
                 /* send the rest of the pieces over */
                 for (i <- 1 until piecesInChunk) {
-                    chunkDownloaderRef ! Piece(i, input2TextP2P.readBytesForPiece(TEST_INDEX, i).get)
+                    val bytes = input2TextP2P.readBytesForPiece(TEST_INDEX, i).get
+                    chunkDownloaderRef ! Piece(i, bytes)
                 }
                 allPiecesShouldHaveBeenReceived()
             }
             "notify listeners of download success" in {
                 // SOMEDAY still not sure this piece of the protocol will ever come in handy
-                // (btw, the Client already KNOWS the chunk size from `FileInfo` object)
+                // (because, the Client ALREADY KNOWS the chunk size from `FileInfo` object)
                 chunkDownloaderRef ! ChunkSuccess
-                expectSoon(ChunkComplete(TEST_INDEX))
+                parent.expectMsg(ChunkComplete(TEST_INDEX))
             }
             "write chunk of CORRECT data to disk" in {
                 output1Txt should exist
@@ -148,7 +159,7 @@ class ChunkDLInvalidDataTest extends BaseChunkDLTester {
             }
 
             "notify parent of bad peer" in {
-                expectSoon {
+                parent expectMsg {
                     ChunkDLFailed(
                         chunkIdx = TEST_INDEX,
                         peerPath = self,
@@ -175,8 +186,8 @@ class ChunkDLTimeoutTest extends BaseChunkDLTester {
 
             "notify parent of failure and peer" in {
                 // not being in an "in" block made this test fail?!
-                within(chunkDownloaderPtr.RECEIVE_TIMEOUT + 2.seconds) {
-                    expectMsg(ChunkDLFailed(0, self, TransferTimeout))
+                parent.within(chunkDownloaderPtr.RECEIVE_TIMEOUT + 2.seconds) {
+                    parent.expectMsg(ChunkDLFailed(0, self, TransferTimeout))
                 }
                 chunkDownloaderPtr.piecesRcvd shouldEqual pieceArrayWithFirstPieceTrue
             }

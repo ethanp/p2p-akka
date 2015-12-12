@@ -74,6 +74,7 @@ class ChunkDownloader(p2PFile: LocalP2PFile, chunkIdx: Int, peerRef: ActorRef)
             val success = writeChunk()
             if (success) chunkXferSuccess()
             else chunkXferFailed(cause = InvalidData)
+            listeners foreach (_ ! ChunkComplete(chunkIdx))
 
         case AddMeAsListener =>
             listeners += sender
