@@ -41,7 +41,7 @@ class FileDownloaderTest extends BaseTester {
 
     def bytesForChunk(chunkIdx: Int): Array[Byte] = {
         val pieces = (0 until input2Info.numPiecesInChunk(chunkIdx)).toArray
-        pieces flatMap { input2TextP2P.readBytesForPiece(chunkIdx, _).get }
+        pieces flatMap {input2TextP2P.readBytesForPiece(chunkIdx, _).get}
     }
 }
 
@@ -50,6 +50,9 @@ class FileDownloaderTest extends BaseTester {
   * - Create { 3 liveSeeders, 2 deadSeeders, 2 [sic] liveLeechers, 3 deadLeechers }
   * - Pass them to the FileDownloader (constructor parameter)
   *
+  * Note: it actually doesn't to the FileDownloader whether the dead nodes are seeders or leechers,
+  * they will all simply end up in the pile of dead peers.
+  *
   * NARRATIVE
   * - The FileDownloader asks for their `Avblty`s
   * + In that way, it finds out the categories of Peers created above
@@ -57,7 +60,10 @@ class FileDownloaderTest extends BaseTester {
   */
 class FileDownloaderTestLiveAndDeadSeedersAndLeechers extends FileDownloaderTest {
     "there are live & dead seeders & leechers" when {
-        val peers = (1 to 10).map(i => system.actorOf(Props(classOf[ForwardingActor], self), "fwd-actor-" + i)).toSet
+        val peers = (1 to 10).to[Set] map { i =>
+            val fwd = Props(classOf[ForwardingActor], self)
+            system.actorOf(fwd, "fwd-actor-" + i)
+        }
         val (seeders, leechers) = splitAtIndex(peers, 5)
         val (liveSeeders, deadSeeders) = splitAtIndex(seeders, 3)
         val (liveLeechers, deadLeechers) = splitAtIndex(leechers, 2)
@@ -207,6 +213,14 @@ class FileDownloaderTestJustEnoughLeechers extends FileDownloaderTest {
 
 /** In this test, there are no seeders, and there is a single leecher holding each chunk,
   * except that NO ONE has the LAST chunk.
+  *
+  * It sends out requests for the first few chunks, and then...
+  *
+  * The point is that it SHOULD timeout because it doesn't download anything.
+  * And this timeout SHOULD trigger a re-pinging of everyone thought to be in
+  * the swarm by the tracker. However, I haven't implemented that yet in the
+  * code or in this test. So I guess I should implement the test first, and
+  * then write the code?
   */
 class FileDownloaderTestNotFullyAvailable extends FileDownloaderTest {
     "a FileDownloader" when {
@@ -227,15 +241,12 @@ class FileDownloaderTestNotFullyAvailable extends FileDownloaderTest {
             /* TODO This test-class should be testing that the retry-download mechanism works
              * However, note that I haven't implemented said mechanism yet.
              */
-            fdPtr.retryDownloadInterval = 2 minutes // change to '2 seconds' or something
+            fdPtr.retryDownloadInterval = 2 seconds // change to '2 seconds' or something
 
             /* There are more than enough concurrent-chunk slots to download all available
              * chunks at once. The point is that we still won't spawn that many ChunkDownloaders.
              */
-            fdPtr.maxConcurrentChunks = Seq(avblChunkIndices.size+1, fdPtr.maxConcurrentChunks).max
-
-            /* the line above means that we can 'expect' the following to be true */
-            val numChunkDownloaders = avblChunkIndices.size
+            fdPtr.maxConcurrentChunks = avblChunkIndices.size + 1
 
             "first starting up" should {
                 "check status of all potential peers" in {
@@ -258,30 +269,33 @@ class FileDownloaderTestNotFullyAvailable extends FileDownloaderTest {
                         val avbl = new mutable.BitSet(input2Info.numChunks) + idx
                         fdPtr.liveLeechers should contain(Leecher(avbl, leecher))
                     }
+                    fdPtr.liveLeechers.size shouldEqual leechers.size
                     fdPtr.availableChunks shouldEqual BitSet(avblChunkIndices: _*)
                 }
                 "spawn just the two chunk downloaders" in {
-                    fdPtr.chunkDownloaders should have size numChunkDownloaders
-                    quickly((0 until numChunkDownloaders) foreach { _ =>
+                    fdPtr.chunkDownloaders.size shouldEqual leechers.size
+                    quickly((0 until leechers.size) foreach { _ =>
                         expectMsgType[ChunkRequest]
                     })
                 }
             }
             "continuing download" should {
-                // we get everything we expect to receive from peers
-                avblChunkIndices foreach { chunkIdx =>
-//                    TODO make this work: fdActorRef ! ChunkCompleteData(chunkIdx)
+                /* chunks are received from peers */
+                fdPtr.chunkDownloaders.zipWithIndex foreach { case (leecherConn, idx) =>
+                    leecherConn ! ChunkCompleteData(idx, bytesForChunk(idx))
                 }
                 "send the rest of the ChunkRequests" in {
-                    numChunkDownloaders to avblChunkIndices.last foreach { _ =>
+                    for (_ ← avblChunkIndices.size to avblChunkIndices.last)
                         within(200 milliseconds)(expectMsgType[ChunkRequest])
-                    }
                 }
-
-                // TODO eventually retry connecting with everyone in swarm
-                "eventually retry connecting with everyone in swarm" ignore {
+                "eventually timeout because the download is not progressing" in {
                     within(fdPtr.retryDownloadInterval - 1.second)(expectNoMsg())
                     within(2 seconds)(expectMsg(TransferTimeout))
+                    assert(true) // bleh.
+                }
+
+                // TODO test that it will retry connecting with everyone in swarm
+                "then retry connecting with everyone in swarm" ignore {
                     assert(true) // bleh.
                 }
             }
@@ -339,7 +353,7 @@ class PeerTimeoutWithBackups extends FileDownloaderTest {
 
                 "only receive a response from one seeder" in {
 
-//                  TODO make this work  fdActorRef ! ChunkCompleteData(0)
+                    //                  TODO make this work  fdActorRef ! ChunkCompleteData(0)
                     quickly {
                         val possibilities = List(
                             ChunkRequest(input2Info.abbreviation, 2),

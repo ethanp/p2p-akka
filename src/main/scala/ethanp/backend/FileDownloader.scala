@@ -131,6 +131,7 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
     override def receive: Actor.Receive = LoggingReceive {
 
         case ReceiveTimeout =>
+            listeners foreach (_ ! TransferTimeout)
             // TODO reconnect with everyone in swarm and check availabilities
             // This includes those in liveSeeders, liveLeechers, and the `quarantine`
 

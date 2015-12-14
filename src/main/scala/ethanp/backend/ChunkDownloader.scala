@@ -22,7 +22,7 @@ class ChunkDownloader(p2PFile: LocalP2PFile, chunkIdx: Int, peerRef: ActorRef)
 
     /* -- FIELDS -- */
     val chunkData = new Array[Byte](p2PFile.fileInfo numBytesInChunk chunkIdx)
-    var RECEIVE_TIMEOUT = 2.seconds
+    var RECEIVE_TIMEOUT = 5.seconds
     var listeners = Set(context.parent)
 
 
