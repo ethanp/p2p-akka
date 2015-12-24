@@ -84,8 +84,9 @@ implemented) to make it easier to investigate what exactly is going on.
     * It would also be cool...to try out Akka's new "typed actors"
         * There was a great [presentation][typed-konrad] by Konrad Malawski
           about these (which is where I got the idear)
-2. DHT for peer discovery
-3. Run/test across multiple JVMs/machines
+2. Replace the whole `Piece` idea with Akka Streams
+3. DHT for peer discovery
+4. Run/test across multiple JVMs/machines
 
 [typed-konrad]: https://www.youtube.com/watch?v=WnTSuYL4_wU
 
