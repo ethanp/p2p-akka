@@ -123,7 +123,9 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
       * 2. Leeching(avblty)
       * 3. PeerSideError("file with that hash not known")
       */
-    override def preStart(): Unit = potentialDownloadees foreach (_ ! GetAvblty(abbreviation))
+    override def preStart(): Unit = pingWholeSwarm()
+
+    def pingWholeSwarm(): Unit = potentialDownloadees foreach (_ ! GetAvblty(abbreviation))
 
     // SOMEDAY this should also de-register me from all the event buses I'm subscribed to
     override def postStop(): Unit = fileWriter.close()
@@ -132,8 +134,9 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
 
         case ReceiveTimeout =>
             listeners foreach (_ ! TransferTimeout)
-            // TODO reconnect with everyone in swarm and check availabilities
-            // This includes those in liveSeeders, liveLeechers, and the `quarantine`
+            pingWholeSwarm()
+            resetDownloadTimeoutTimer()
+            // TODO ping the Tracker again for a swarm-update
 
         case ChunkCompleteData(chunkIdx, chunkData) =>
             writeChunkData(chunkIdx, chunkData)
@@ -155,8 +158,9 @@ class FileDownloader(fileDLing: FileToDownload, downloadDir: File) extends Actor
             bytesDLedPastSecond += numBytes
         // SOMEDAY update the peer-specific transfer speed (for dl priority) on the FilePeer object
 
-        /** This comes from this node's Client actor who wants to know how much of the file is complete.
-          * Tell her we have everything, except for the incompleteChunks.
+        /** This comes from this node's Client actor who was asked by a peer whether she's
+          * seeding or leeching THIS file. Tell her we have everything, except for the
+          * `incompleteChunks`.
           */
         case GetAvblty(abbrev) => if (abbrev == abbreviation) {
             val avblChunks: BitSet = createFullMutableBitSet &~ incompleteChunks

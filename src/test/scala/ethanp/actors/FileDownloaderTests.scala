@@ -50,8 +50,8 @@ class FileDownloaderTest extends BaseTester {
   * - Create { 3 liveSeeders, 2 deadSeeders, 2 [sic] liveLeechers, 3 deadLeechers }
   * - Pass them to the FileDownloader (constructor parameter)
   *
-  * Note: it actually doesn't to the FileDownloader whether the dead nodes are seeders or leechers,
-  * they will all simply end up in the pile of dead peers.
+  * Note: it actually doesn't matter to the FileDownloader whether the dead nodes are seeders
+  * or leechers, they will all simply end up in the pile of dead peers.
   *
   * NARRATIVE
   * - The FileDownloader asks for their `Avblty`s
@@ -238,10 +238,8 @@ class FileDownloaderTestNotFullyAvailable extends FileDownloaderTest {
             val fdPtr: FileDownloader = fdActorRef.underlyingActor
             fdPtr.localFile.deleteOnExit()
 
-            /* TODO This test-class should be testing that the retry-download mechanism works
-             * However, note that I haven't implemented said mechanism yet.
-             */
-            fdPtr.retryDownloadInterval = 2 seconds // change to '2 seconds' or something
+            /* so we don't have to wait _minutes_ for the test to run */
+            fdPtr.retryDownloadInterval = 2 seconds
 
             /* There are more than enough concurrent-chunk slots to download all available
              * chunks at once. The point is that we still won't spawn that many ChunkDownloaders.
@@ -284,10 +282,6 @@ class FileDownloaderTestNotFullyAvailable extends FileDownloaderTest {
                 fdPtr.chunkDownloaders.zipWithIndex foreach { case (leecherConn, idx) =>
                     leecherConn ! ChunkCompleteData(idx, bytesForChunk(idx))
                 }
-                "send the rest of the ChunkRequests" in {
-                    for (_ ← avblChunkIndices.size to avblChunkIndices.last)
-                        within(200 milliseconds)(expectMsgType[ChunkRequest])
-                }
                 "eventually timeout because the download is not progressing" in {
                     within(fdPtr.retryDownloadInterval - 1.second)(expectNoMsg())
                     within(2 seconds)(expectMsg(TransferTimeout))
@@ -296,7 +290,7 @@ class FileDownloaderTestNotFullyAvailable extends FileDownloaderTest {
 
                 // TODO test that it will retry connecting with everyone in swarm
                 "then retry connecting with everyone in swarm" ignore {
-                    assert(true) // bleh.
+                    quickly(expectNOf(leechers.size, GetAvblty(input2Info.abbreviation)))
                 }
             }
         }
@@ -353,7 +347,7 @@ class PeerTimeoutWithBackups extends FileDownloaderTest {
 
                 "only receive a response from one seeder" in {
 
-                    //                  TODO make this work  fdActorRef ! ChunkCompleteData(0)
+                    // TODO make this work  fdActorRef ! ChunkCompleteData(0)
                     quickly {
                         val possibilities = List(
                             ChunkRequest(input2Info.abbreviation, 2),
