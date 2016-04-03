@@ -29,8 +29,11 @@ class BaseChunkDLTester extends BaseTester {
     val testChunkIdx: Int = 0
     val chunkSize: Int = input2TextP2P.fileInfo numBytesInChunk testChunkIdx
     val piecesInChunk: Int = input2TextP2P.fileInfo numPiecesInChunk testChunkIdx
-    val invalidPieceData = new Array[Byte](piecesInChunk)
-    Random.nextBytes(invalidPieceData)
+    val invalidPieceData = {
+        val a = new Array[Byte](piecesInChunk)
+        Random.nextBytes(a)
+        a
+    }
 
     /* This is an actor who will receive messages from the ChunkDownloader.
      * Then we can ask it what messages it received.
@@ -66,21 +69,21 @@ class BaseChunkDLTester extends BaseTester {
         }
     }
 
-    def pieceArrayWithFirstPieceTrue = {
-        val arr = Array.fill(piecesInChunk)(false)
-        arr(0) = true
-        arr
-    }
+    def pieceArrayOf(boolean: Boolean): Array[Boolean] = Array.fill(piecesInChunk)(boolean)
 
-    def pieceArrayOf(boolean: Boolean) = Array.fill(piecesInChunk)(boolean)
+    def noPieces: Array[Boolean] = pieceArrayOf(false)
 
-    def verifyReceived(real: Array[Boolean]) = real shouldEqual chunkDownloaderPtr.piecesRcvd
+    def allPieces: Array[Boolean] = pieceArrayOf(true)
 
-    def noPiecesShouldHaveBeenReceived() = verifyReceived(pieceArrayOf(false))
+    def pieceArrayWithFirstPieceTrue: Array[Boolean] = true +: pieceArrayOf(false).tail
 
-    def firstPieceShouldHaveBeenReceived() = verifyReceived(pieceArrayWithFirstPieceTrue)
+    def verifyReceived(real: Array[Boolean]): Unit = chunkDownloaderPtr.piecesRcvd shouldEqual real
 
-    def allPiecesShouldHaveBeenReceived() = verifyReceived(pieceArrayOf(true))
+    def noPiecesShouldHaveBeenReceived(): Unit = verifyReceived(noPieces)
+
+    def firstPieceShouldHaveBeenReceived(): Unit = verifyReceived(pieceArrayWithFirstPieceTrue)
+
+    def allPiecesShouldHaveBeenReceived(): Unit = verifyReceived(allPieces)
 }
 
 class ChunkDLValidDataTest extends BaseChunkDLTester {
@@ -94,8 +97,8 @@ class ChunkDLValidDataTest extends BaseChunkDLTester {
 
         "received first piece" should {
             "mark only first piece as received" in {
-                val bytes = input2TextP2P.readBytesForPiece(testChunkIdx, 0).get
-                chunkDownloaderRef ! Piece(0, bytes)
+                val bytes: Array[Byte] = input2TextP2P.readBytesForPiece(testChunkIdx, pieceIdx = 0).get
+                chunkDownloaderRef ! Piece(pieceIdx = 0, data = bytes)
                 firstPieceShouldHaveBeenReceived()
             }
         }
@@ -103,7 +106,7 @@ class ChunkDLValidDataTest extends BaseChunkDLTester {
         "received all pieces" should {
             "mark all pieces off" in {
                 /* send the rest of the pieces over */
-                for (i <- 1 until piecesInChunk) {
+                for (i ← 1 until piecesInChunk) {
                     val bytes = input2TextP2P.readBytesForPiece(testChunkIdx, i).get
                     chunkDownloaderRef ! Piece(i, bytes)
                 }
@@ -113,8 +116,10 @@ class ChunkDLValidDataTest extends BaseChunkDLTester {
              * You must run the entire class for this test to pass.
              */
             "notify listeners of download success" in {
-                // SOMEDAY still not sure this piece of the protocol will ever come in handy
-                // (because, the Client ALREADY KNOWS the chunk size from `FileInfo` object)
+                // SOMEDAY this part of the protocol should be removed
+                // because the Client ALREADY KNOWS the chunk size from `FileInfo` object;
+                // so the ChunkCompleteData message should be sent as soon as all pieces
+                // have been received and validated.
                 chunkDownloaderRef ! ChunkSuccess
 
                 parent.expectMsgClass(classOf[ChunkCompleteData])
@@ -144,13 +149,11 @@ class ChunkDLInvalidDataTest extends BaseChunkDLTester {
             }
 
             "notify parent of bad peer" in {
-                parent expectMsg {
-                    ChunkDLFailed(
-                        chunkIdx = testChunkIdx,
-                        peerPath = self,
-                        cause = InvalidData
-                    )
-                }
+                parent expectMsg ChunkDLFailed(
+                    chunkIdx = testChunkIdx,
+                    peerPath = self,
+                    cause = InvalidData
+                )
             }
         }
     }
@@ -171,7 +174,11 @@ class ChunkDLTimeoutTest extends BaseChunkDLTester {
             "notify parent of failure and peer" in {
                 // not being in an "in" block made this test fail?!
                 parent.within(chunkDownloaderPtr.RECEIVE_TIMEOUT + 2.seconds) {
-                    parent.expectMsg(ChunkDLFailed(0, self, TransferTimeout))
+                    parent expectMsg ChunkDLFailed(
+                        chunkIdx = 0,
+                        peerPath = self,
+                        cause = TransferTimeout
+                    )
                 }
                 chunkDownloaderPtr.piecesRcvd shouldEqual pieceArrayWithFirstPieceTrue
             }
