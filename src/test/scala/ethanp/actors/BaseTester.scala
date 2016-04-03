@@ -24,8 +24,8 @@ class BaseTester
     with Matchers //  e.g. shouldBe, have length, startWith, include, etc.
     with BeforeAndAfterAll // allow beforeAll and afterAll methods
     with Inside /* allows `inside (caseClass) { case CaseClass(abcd) => abcd shouldBe x }` */ {
-    val (test1, test1TextLoc) = "test1" -> "testfiles/Test1.txt"
-    val (test2, input2TextLoc) = "test2" -> "testfiles/input2.txt"
+    val (test1, test1TextLoc) = "test1" → "testfiles/Test1.txt"
+    val (test2, input2TextLoc) = "test2" → "testfiles/input2.txt"
     val testTextP2P = LocalP2PFile.loadFile(test1, test1TextLoc)
     val input2TextP2P = LocalP2PFile.loadFile(test2, input2TextLoc)
     val bouncers = (1 to 2).map(i => system.actorOf(Props(classOf[ForwardingActor], self)))
@@ -41,16 +41,16 @@ class BaseTester
 
     def expectSoon[T](t: T): Unit = quickly(expectMsg(t))
 
-    def quickly[T](f: => T): Unit = { within[T](duration)(f); assert(true) /*for highlighting*/ }
+    def quickly[T](f: ⇒ T): Unit = { within[T](duration)(f); assert(true) /*for highlighting*/ }
 }
 
 object BaseTester {
     // Define your test specific configuration here
     val config =
         """
-    akka {
-      loglevel = "WARNING"
-    }
+        akka {
+          loglevel = "WARNING"
+        }
         """
 
     case class OrigAddressee(m: Any, actorPath: ActorPath)

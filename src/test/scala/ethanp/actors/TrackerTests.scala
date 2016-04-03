@@ -66,7 +66,7 @@ class TrackerTests extends BaseTester {
                 expectMsg(TrackerSideError(s"I don't know a file called UNKNOWN_FILE"))
             }
         }
-        "succeed a download request for an known file" in {
+        "succeed a download request for an known file AND add requester as leecher in swarm" in {
             quickly {
                 trackerRef.tell(DownloadFile(test2), bouncers.head)
                 expectMsg(knowledge3)

@@ -1,19 +1,19 @@
 ### A simple peer-to-peer system written using the Akka framework
 
-Much simplified version of BitTorrent.
+Simplified version of BitTorrent.
 
 #### Becoming a seeder
 * A client loads a local file by SHA2 hashing its contents to an array of
   "chunk hashes" of size `BYTES_PER_CHUNK` as defined below.
     * Currently, `chunk`s are made up of smaller `pieces`
         * I believe this terminology is the opposite of bit-torrent's
-    * The relation is as follows
+    * The relation is as follows (from `P2PFile.scala`, `LocalP2PFile`)
         ```scala
         val BYTES_PER_PIECE = 1024
         val PIECES_PER_CHUNK = 3
         val BYTES_PER_CHUNK = BYTES_PER_PIECE * PIECES_PER_CHUNK
         ```
-* A file's "`abbreviation`"" is a hash of `$filename$chunkHashes$fileLength`
+* A file's "`abbreviation`" is a hash of `$filename$chunkHashes$fileLength`
 * The client may upload these hashes along with the filename to all "trackers"
   it knows. Once the tracker receives it,
     * If the hash matches any file the tracker currently has by this name, or
@@ -25,9 +25,12 @@ Much simplified version of BitTorrent.
 #### Becoming a leecher
 * A client may request the list of seeders of a file from a tracker, and 
   receive their addresses (in the form of Akka `PeerRef`s)
-* After The client initiates chunk requests from up to 4 seeders at a time
-    * they send the client their chunks, and the client saves these chunks to
-      a local file
+    * Upon doing this, the tracker adds the requester to the _leecher set_ for
+      this _swarm_
+* After The client initiates chunk requests from up to `maxConcurrentChunks`
+  peers at a time
+    * they send the client their chunks, and the client saves these chunks to a
+      local file
 
 ### Tests
 
@@ -92,13 +95,13 @@ implemented) to make it easier to investigate what exactly is going on.
 
 ### (OLD) Example usage
 
-**This probably doesn't work anymore as I've moved to TDD. _Run the
-test cases instead._** There will be a new version of the *example usage* once I
-get a better command-line interface running.
+**This probably doesn't work anymore as I've moved to TDD. _Run the test cases
+instead._** There will be a new version of the *example usage* once I get a
+better command-line interface running.
 
-Fire it up, run `Master.scala` and paste the following text into your
-console. This script will transfer the textfile `testfiles/Test1.txt` from two
-simulated peers to a simulated client.
+Fire it up, run `Master.scala` and paste the following text into your console.
+This script will transfer the textfile `testfiles/Test1.txt` from two simulated
+peers to a simulated client.
 
     newTracker
     newClient

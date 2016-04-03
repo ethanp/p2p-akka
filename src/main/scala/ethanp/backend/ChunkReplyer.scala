@@ -52,7 +52,6 @@ class ChunkReplyer(localP2PFile: LocalP2PFile, replyRate: Rate) extends Actor wi
                 case Success(pieceData) =>
                     uploadThrottler ! Piece(pieceIdx, pieceData)
 
-                /* TODO test this */
                 /* Give up if there's a failure */
                 case Failure(throwable) =>
                     logError(throwable)

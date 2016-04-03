@@ -8,6 +8,7 @@ import ethanp.backend.client._
 import ethanp.file.LocalP2PFile
 
 import scala.concurrent.duration._
+import scala.util.Random
 
 /**
   * Created by Ethan Petuchowski on 7/2/15.
@@ -18,41 +19,42 @@ class BaseChunkDLTester extends BaseTester {
     /* this is where the ChunkDownloader will store the Chunks it receives */
     val output1Txt = new File("testfiles/output1.txt")
     output1Txt.delete()
-    output1Txt.deleteOnExit()
 
     /* this file has 3 chunks */
     val outputP2PFile = LocalP2PFile.empty(input2TextP2P.fileInfo, output1Txt)
 
-    /* Our ChunkDownloader-under-test is, responsible for the first chunk of the file.
+    /* Our ChunkDownloader-under-test is responsible for the first chunk of the file.
      * There are 3 PIECES_PER_CHUNK (under current settings).
      */
-    val testChunkIdx = 0
+    val testChunkIdx: Int = 0
+    val chunkSize: Int = input2TextP2P.fileInfo numBytesInChunk testChunkIdx
+    val piecesInChunk: Int = input2TextP2P.fileInfo numPiecesInChunk testChunkIdx
+    val invalidPieceData = new Array[Byte](piecesInChunk)
+    Random.nextBytes(invalidPieceData)
 
-    val chunkSize = input2TextP2P.fileInfo numBytesInChunk testChunkIdx
-
-    val piecesInChunk = input2TextP2P.fileInfo numPiecesInChunk testChunkIdx
-
-    val invalidPieceData = Array[Byte](12, 32, 42)
-
+    /* This is an actor who will receive messages from the ChunkDownloader.
+     * Then we can ask it what messages it received.
+     */
     var parent = TestProbe()
 
     /* Create a ChunkDownloader to test
      *
-     * Note that the ChunkDownloader' parent (viz. `self`) is
+     * Note that the ChunkDownloader's parent (`self`) is
      * _automatically_ added to `listeners`.
      */
     val chunkDownloaderRef = TestActorRef(
-        ChunkDownloader.props(
+        props = ChunkDownloader.props(
             p2PFile = outputP2PFile,
             chunkIdx = testChunkIdx,
             peerRef = self
         ),
-        parent.ref,
-        "ChunkDownloader-UnderTest"
+        supervisor = parent.ref,
+        name = "ChunkDownloader-UnderTest"
     )
 
     val chunkDownloaderPtr: ChunkDownloader = chunkDownloaderRef.underlyingActor
 
+    // we get the chunk request "out of the way" in this base-test
     "newly spawned chunk downloader" should {
         "request chunk from specified peer" in {
             expectSoon {
@@ -61,11 +63,6 @@ class BaseChunkDLTester extends BaseTester {
                     chunkIdx = testChunkIdx
                 )
             }
-        }
-    }
-    "this test framework" should {
-        "have deleted the outfile" in {
-            output1Txt shouldNot exist
         }
     }
 

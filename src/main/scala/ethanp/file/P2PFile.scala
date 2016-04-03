@@ -24,13 +24,13 @@ import scala.util.{Failure, Success, Try}
   * In fact the _only_ point of having "pieces" is to
   * be able to implement a progress bar on top.
   *
-  * If there's a better way to do that, I'd love to know.
+  * SOMEDAY The better way to do that is probably via Akka Streams
   */
 
 /** The P2PFile contains metadata about a file that a peer requires
   * to be able to up/download the file
   *
-  * TODO It should be saved on disk (as JSON?)
+  * SOMEDAY It should be saved on disk (as JSON?)
   */
 trait P2PFile {
     val fileInfo: FileInfo
