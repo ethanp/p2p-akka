@@ -7,58 +7,69 @@ Simplified version of BitTorrent.
   "chunk hashes" of size `BYTES_PER_CHUNK` as defined below.
     * Currently, `chunk`s are made up of smaller `pieces`
         * I believe this terminology is the opposite of bit-torrent's
-    * The relation is as follows (from `P2PFile.scala`, `LocalP2PFile`)
+    * The relation is as follows (from file `P2PFile.scala`, class `LocalP2PFile`)
         ```scala
         val BYTES_PER_PIECE = 1024
         val PIECES_PER_CHUNK = 3
         val BYTES_PER_CHUNK = BYTES_PER_PIECE * PIECES_PER_CHUNK
         ```
 * A file's "`abbreviation`" is a hash of `$filename$chunkHashes$fileLength`
-* The client may upload these hashes along with the filename to all "trackers"
-  it knows. Once the tracker receives it,
-    * If the hash matches any file the tracker currently has by this name, or
-      the tracker has no file with this name, the tracker adds this client to
-      the list of known "seeders" of this file
-    * Otherwise, the tracker has a file with this name but a different hash,
-      and the new listing will be _rejected_
+* The client may upload these hashes along with the filename to all "tracker"
+  servers it knows. Once a tracker receives it,
+    * If the tracker has a file with this name but a different hash, the new
+      listing will be _rejected_
+    * Otherwise, the tracker adds this client to the list of known "seeders"
+      of this file
+
 
 #### Becoming a leecher
-* A client may request the list of seeders of a file from a tracker, and 
-  receive their addresses (in the form of Akka `PeerRef`s)
+
+* A __swarm__ is the known set of seeders and leechers of a particular file
+* A client receives addresses of members of a file's _swarm_ from a tracker
+  (in the form of Akka `PeerRef`s)
     * Upon doing this, the tracker adds the requester to the _leecher set_ for
       this _swarm_
-* After The client initiates chunk requests from up to `maxConcurrentChunks`
+* The client initiates chunk requests from up to `maxConcurrentChunks`
   peers at a time
-    * they send the client their chunks, and the client saves these chunks to a
-      local file
+* They each respond with their chunks, which the client saves to a local file
+
 
 ### Tests
 
-I am using TDD, please run the `scalatest` tests in the `tests` directory to
-verify that your dependencies are there and everything is up and running
-properly by running
+Development is losely _test-driven_, so please run the `scalatest` tests in
+the `tests` directory to verify that your dependencies are there and
+everything is up and running properly by running the following shell command
+in the repository's base directory
 
 ```
 $ sbt test
 ```
 
+The tests also form a decent presentation of how everything works.
 
 #### Next-Level Tests (TODO)
 
-N.B.: These should use the `Client`'s configurable `uploadLimit` (already 
+N.B.: These should use the `Client`'s configurable `uploadLimit` (already
 implemented) to make it easier to investigate what exactly is going on.
 
 1. 2 peers have file but 1 *dies* part-way through transfer
 2. 1 of two peers sends corrupted chunk, other does rest of file
-3. Download from peer who doesn't have whole file
-4. Download from peer who comes online after transfer starts
-5. CLI-based progress bar by setting the `max-upload-speed` to e.g.
-   2-bytes-per-second
+3. Download from peer who comes online after transfer starts
+4. Run across multiple JVMs
+5. Run across multiple Linux VMs
+6. Run across multiple physical nodes
+7. Benchmarks
+
+### Next-Level features (TODO)
+
+* CLI-based progress bar
+* Full-fledged GUI
+* DHT
 
 
 ### Actor Structure
 
-* `Tracker` --- responds to 
+* `Tracker` --- responds to
     1. requests to seed
     2. requests for seeders
 * `Client`
@@ -84,7 +95,7 @@ implemented) to make it easier to investigate what exactly is going on.
 1. Replace Actors with Akka StateMachines
     * The whole client<->peer protocol is really just a "parallel" state
       machine
-    * It would also be cool...to try out Akka's new "typed actors"
+    * It would also be cool...to try out Akka's new "Akka Typed" actors
         * There was a great [presentation][typed-konrad] by Konrad Malawski
           about these (which is where I got the idear)
 2. Replace the whole `Piece` idea with Akka Streams
@@ -112,11 +123,9 @@ peers to a simulated client.
     giveClientTracker 2 0
     addFile 0 testfiles/Test1.txt test1
     addFile 1 testfiles/Test1.txt test1
-    
+
 Paste that in first; we need to wait (a few milliseconds) for the peers to
 generate hashes of each chunk of the file, and upload them to the tracker,
-before we can issue the command for the client to download it. `listTracker`
-below is not necessary, it's just to show that the file exists (and none other
-do) on the tracker.
-    
+before we can issue the command for the client to download it.
+
     download 2 0 test1
